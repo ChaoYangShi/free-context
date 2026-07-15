@@ -32,6 +32,7 @@ type PreCompactInput struct {
 
 type PreToolUseInput struct {
 	SessionID      string          `json:"session_id"`
+	AgentID        string          `json:"agent_id"`
 	TurnID         string          `json:"turn_id"`
 	TranscriptPath *string         `json:"transcript_path"`
 	CWD            string          `json:"cwd"`

@@ -1,9 +1,11 @@
 package hooks
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/ChaoYangShi/free-context/internal/daemon"
@@ -99,6 +101,18 @@ func TestPreToolUseAllowsActiveRun(t *testing.T) {
 	}
 	if string(response) != "{}" {
 		t.Fatalf("expected empty allow response, got %s", response)
+	}
+}
+
+func TestServeAllowsSubagentPreToolUseInput(t *testing.T) {
+	input := `{"session_id":"parent-thread","turn_id":"turn-1","transcript_path":null,"cwd":"/workspace","hook_event_name":"PreToolUse","model":"gpt-5","permission_mode":"default","tool_name":"Bash","tool_use_id":"tool-1","tool_input":{"command":"pwd"},"agent_id":"worker-1"}`
+	commander := &fakeCommander{run: orchestrator.Run{Status: orchestrator.RunActive}}
+	var output bytes.Buffer
+	if err := Serve(context.Background(), PreToolUseCommand, strings.NewReader(input), &output, New(commander, "run-1")); err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != "{}\n" {
+		t.Fatalf("expected subagent tool use to be allowed, got %s", output.String())
 	}
 }
 
