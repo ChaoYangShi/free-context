@@ -8,7 +8,7 @@ Build a Linux-only Codex CLI supervisor that prevents managed agents from contin
 
 - A user-level `free-context` daemon owns one Codex app-server per active run.
 - A workspace may have one active root run. A run may contain multiple subagents.
-- The root agent owns the plan and decides how many subagents to create.
+- Before execution and whenever its plan changes, the root agent evaluates the remaining work for independent tasks. It chooses and creates subagents when parallel work materially improves speed or quality without conflicting writes; otherwise it continues alone.
 - Free Context manages agent lifecycle, state, handoff, and rotation. It does not manage Git worktrees, file ownership, merge conflicts, or task correctness.
 - Managed sessions use `approval_policy=never`. Handoff and replacement agents inherit the source model and do not receive broader sandbox permissions.
 - The minimum supported Codex CLI version is `0.144.4`. Older versions are rejected; no compatibility layer is provided.
@@ -110,4 +110,3 @@ free-context hook
 ```
 
 `run` interactively requests an objective and one or more completion criteria before opening the initial remote Codex TUI.
-

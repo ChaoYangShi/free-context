@@ -39,7 +39,12 @@ type Session struct {
 	Client    *codexrpc.Client
 	server    *exec.Cmd
 	socket    string
-	done      chan error
+	exit      *serverExit
+}
+
+type serverExit struct {
+	done chan struct{}
+	err  error
 }
 
 func (s *Session) Close() error {
@@ -51,12 +56,12 @@ func (s *Session) Close() error {
 	}
 	if s.server != nil && s.server.Process != nil {
 		_ = syscall.Kill(-s.server.Process.Pid, syscall.SIGTERM)
-		if s.done != nil {
+		if s.exit != nil {
 			select {
-			case <-s.done:
+			case <-s.exit.done:
 			case <-time.After(2 * time.Second):
 				_ = syscall.Kill(-s.server.Process.Pid, syscall.SIGKILL)
-				<-s.done
+				<-s.exit.done
 			}
 		}
 	}
@@ -140,9 +145,7 @@ func (m *Manager) Start(ctx context.Context, run orchestrator.Run) (Runtime, err
 	}
 	_ = os.Remove(socket)
 	env := []string{"FREE_CONTEXT_RUN_ID=" + run.ID, "FREE_CONTEXT_DAEMON_SOCKET=" + m.DaemonSocket}
-	serverArgs := []string{"--dangerously-bypass-hook-trust", "app-server", "--listen", "unix://" + socket, "--enable", "codex_hooks"}
-	serverArgs = append(serverArgs, hookConfigArgs(m.HookCommand)...)
-	serverArgs = append(serverArgs, "-c", "developer_instructions="+strconv.Quote(managedInstructions))
+	serverArgs := appServerArgs(socket, m.HookCommand)
 	binary := m.Binary
 	if binary == "" {
 		binary = "codex"
@@ -155,9 +158,12 @@ func (m *Manager) Start(ctx context.Context, run orchestrator.Run) (Runtime, err
 	if err := server.Start(); err != nil {
 		return nil, fmt.Errorf("start run app-server: %w", err)
 	}
-	done := make(chan error, 1)
-	go func() { done <- server.Wait() }()
-	if err := waitForSocket(ctx, socket, done); err != nil {
+	exit := &serverExit{done: make(chan struct{})}
+	go func() {
+		exit.err = server.Wait()
+		close(exit.done)
+	}()
+	if err := waitForSocket(ctx, socket, exit); err != nil {
 		_ = syscall.Kill(-server.Process.Pid, syscall.SIGKILL)
 		return nil, err
 	}
@@ -170,7 +176,7 @@ func (m *Manager) Start(ctx context.Context, run orchestrator.Run) (Runtime, err
 		_ = syscall.Kill(-server.Process.Pid, syscall.SIGKILL)
 		return nil, err
 	}
-	session := &Session{RunID: run.ID, Transport: transport, Client: client, server: server, socket: socket, done: done}
+	session := &Session{RunID: run.ID, Transport: transport, Client: client, server: server, socket: socket, exit: exit}
 	if err := client.Initialize(ctx); err != nil {
 		_ = session.Close()
 		return nil, err
@@ -183,12 +189,12 @@ func (m *Manager) Start(ctx context.Context, run orchestrator.Run) (Runtime, err
 }
 
 func (m *Manager) observeExit(runID string, session *Session) {
-	err := <-session.done
+	<-session.exit.done
 	m.mu.Lock()
 	owned := m.sessions[runID] == session
 	m.mu.Unlock()
 	if owned && m.OnExit != nil {
-		m.OnExit(runID, err)
+		m.OnExit(runID, session.exit.err)
 	}
 }
 
@@ -257,16 +263,22 @@ func hookConfigArgs(hookCommand string) []string {
 	preCompact := fmt.Sprintf(`hooks.PreCompact=[{matcher="manual|auto",hooks=[{type="command",command=%s,timeout=1800}]}]`, strconv.Quote(shellQuote(filepath.Clean(hookCommand))+" pre-compact"))
 	preToolUse := fmt.Sprintf(`hooks.PreToolUse=[{matcher=".*",hooks=[{type="command",command=%s,timeout=30}]}]`, strconv.Quote(shellQuote(filepath.Clean(hookCommand))+" pre-tool-use"))
 	mcpCommand := `mcp_servers.free_context.command=` + strconv.Quote(filepath.Clean(hookCommand))
-	return []string{"-c", preCompact, "-c", preToolUse, "-c", mcpCommand, "-c", `mcp_servers.free_context.args=["mcp"]`, "-c", `mcp_servers.free_context.default_tools_approval_mode="approve"`}
+	return []string{"-c", preCompact, "-c", preToolUse, "-c", mcpCommand, "-c", `mcp_servers.free_context.args=["mcp"]`, "-c", `mcp_servers.free_context.env_vars=["FREE_CONTEXT_RUN_ID","FREE_CONTEXT_DAEMON_SOCKET"]`, "-c", `mcp_servers.free_context.default_tools_approval_mode="approve"`}
+}
+
+func appServerArgs(socket, hookCommand string) []string {
+	args := []string{"--dangerously-bypass-hook-trust", "app-server", "--listen", "unix://" + socket, "--enable", "hooks"}
+	args = append(args, hookConfigArgs(hookCommand)...)
+	return append(args, "-c", "developer_instructions="+strconv.Quote(managedInstructions))
 }
 
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
-const managedInstructions = `This is a Free Context managed run. The root agent owns the plan and may create as many subagents as the plan requires. Use the free_context MCP server as the authoritative lifecycle channel. Call report_progress when accepting a task, completing a plan step, changing next_action, becoming blocked, or completing the task. Before every turn ends, report active with a concrete next_action, blocked with blockers, or completed with no unfinished work. When instructed that a handoff is ready, inspect run state, explicitly call accept_handoff, replan from workspace evidence, then call resolve_handoff. Do not request context compaction; Free Context replaces threads at PreCompact.`
+const managedInstructions = `This is a Free Context managed run. The root agent owns the plan and chooses the subagent count from task dependencies and conflict risk. Only when you are the root agent: before starting execution and whenever the plan changes, evaluate the remaining work for independent tasks. When two or more tasks can proceed independently and parallel execution would materially improve speed or quality without conflicting writes, explicitly spawn the appropriate number of subagents, assign each a bounded task, wait for their results, and integrate them. Otherwise continue in the root thread. Non-root agents must execute their assigned task and must not create subagents. Use the free_context MCP server as the authoritative lifecycle channel. Call report_progress when accepting a task, completing a plan step, changing next_action, becoming blocked, or completing the task. Before every turn ends, report active with a concrete next_action, blocked with blockers, or completed with no unfinished work. When instructed that a handoff is ready, inspect run state, explicitly call accept_handoff, replan from workspace evidence, then call resolve_handoff. Do not request context compaction; Free Context replaces threads at PreCompact.`
 
-func waitForSocket(ctx context.Context, socket string, done <-chan error) error {
+func waitForSocket(ctx context.Context, socket string, exit *serverExit) error {
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -276,8 +288,8 @@ func waitForSocket(ctx context.Context, socket string, done <-chan error) error 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case err := <-done:
-			return fmt.Errorf("run app-server exited before creating its socket: %w", err)
+		case <-exit.done:
+			return fmt.Errorf("run app-server exited before creating its socket: %w", exit.err)
 		case <-ticker.C:
 		}
 	}

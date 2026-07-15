@@ -13,7 +13,7 @@ func TestClientInitializesAndStartsThreadUsingExplicitPermissions(t *testing.T) 
 	transport := &fakeTransport{
 		responses: []json.RawMessage{
 			json.RawMessage(`{"jsonrpc":"2.0","id":1,"result":{"platformOs":"linux"}}`),
-			json.RawMessage(`{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-1"},"model":"gpt-test"}}`),
+			json.RawMessage(`{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-1","status":{"type":"idle"}},"model":"gpt-test"}}`),
 		},
 	}
 	client := codexrpc.New(transport, "0.144.4")

@@ -63,7 +63,6 @@ type Thread struct {
 	SessionID      string  `json:"sessionId"`
 	ParentThreadID *string `json:"parentThreadId"`
 	Path           *string `json:"path"`
-	Status         string  `json:"status"`
 	Preview        string  `json:"preview"`
 	Model          string  `json:"-"`
 }
