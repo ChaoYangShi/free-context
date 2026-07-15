@@ -6,19 +6,19 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ChaoYangShi/free-context/internal/daemon"
 	"github.com/ChaoYangShi/free-context/internal/orchestrator"
-	"github.com/ChaoYangShi/free-context/internal/paths"
 	"github.com/ChaoYangShi/free-context/internal/store"
 )
 
 func TestRunHelp(t *testing.T) {
 	command := exec.Command(os.Args[0], "-test.run=TestCLIProcess")
 	command.Env = append(os.Environ(),
-		"FREE_CONTEXT_TEST_CLI=1",
+		"FREE_CONTEXT_TEST_CLI=help",
 		"XDG_STATE_HOME=relative-path-that-must-not-be-resolved",
 	)
 	output, err := command.CombinedOutput()
@@ -39,74 +39,70 @@ func TestRunHelp(t *testing.T) {
 }
 
 func TestCLIProcess(t *testing.T) {
-	if os.Getenv("FREE_CONTEXT_TEST_CLI") != "1" {
+	switch os.Getenv("FREE_CONTEXT_TEST_CLI") {
+	case "help":
+		os.Args = []string{"free-context", "--help"}
+		main()
+	case "run":
+		os.Args = []string{"free-context", "run"}
+		main()
+	default:
 		return
 	}
-	os.Args = []string{"free-context", "--help"}
-	main()
 }
 
-type foregroundExitRecorder struct {
+type completionRecorder struct {
 	engine *orchestrator.Engine
-	exits  int
+	exits  atomic.Int32
 }
 
-func (r *foregroundExitRecorder) Execute(ctx context.Context, command any) (orchestrator.Outcome, error) {
-	if exited, ok := command.(orchestrator.ForegroundExited); ok {
-		r.exits++
-		run, err := r.engine.Execute(ctx, exited)
+func (r *completionRecorder) Execute(ctx context.Context, command any) (orchestrator.Outcome, error) {
+	if completion, ok := command.(orchestrator.FinalizeReportedCompletion); ok {
+		r.exits.Add(1)
+		run, err := r.engine.Execute(ctx, completion)
 		return run, err
 	}
 	return r.engine.Execute(ctx, command)
 }
 
-func TestRunSessionReportsForegroundExitAfterInterrupt(t *testing.T) {
-	stateRoot := filepath.Join(t.TempDir(), "state")
-	runtimeRoot := filepath.Join(t.TempDir(), "runtime")
-	layout := paths.Layout{
-		StateRoot:    stateRoot,
-		RuntimeRoot:  runtimeRoot,
-		DaemonSocket: filepath.Join(runtimeRoot, "daemon.sock"),
-		PIDFile:      filepath.Join(stateRoot, "daemon.pid"),
-		LogFile:      filepath.Join(stateRoot, "daemon.log"),
-	}
+func TestCLIReportsForegroundExitAfterInterrupt(t *testing.T) {
+	stateBase := t.TempDir()
+	runtimeBase := t.TempDir()
+	stateRoot := filepath.Join(stateBase, "free-context")
+	runtimeRoot := filepath.Join(runtimeBase, "free-context")
+	daemonSocket := filepath.Join(runtimeRoot, "daemon.sock")
 	repository := store.NewFS(stateRoot)
 	engine := orchestrator.New(repository, time.Now, func() string { return "run-1" })
-	recorder := &foregroundExitRecorder{engine: engine}
+	recorder := &completionRecorder{engine: engine}
 	serverContext, cancelServer := context.WithCancel(context.Background())
 	serverDone := make(chan error, 1)
 	ready := make(chan struct{})
 	go func() {
-		serverDone <- daemon.ServeReady(serverContext, layout.DaemonSocket, daemon.NewHandler(recorder, repository), ready)
+		serverDone <- daemon.ServeReady(serverContext, daemonSocket, daemon.NewHandler(recorder, repository), ready)
 	}()
 	<-ready
+	defer func() {
+		cancelServer()
+		<-serverDone
+	}()
 
 	fakeCodex := filepath.Join(t.TempDir(), "codex")
 	if err := os.WriteFile(fakeCodex, []byte("#!/bin/sh\nkill -INT \"$PPID\"\nkill -INT \"$$\"\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("FREE_CONTEXT_CODEX_BIN", fakeCodex)
-	input, writer, err := os.Pipe()
+	command := exec.Command(os.Args[0], "-test.run=^TestCLIProcess$")
+	command.Env = append(os.Environ(),
+		"FREE_CONTEXT_TEST_CLI=run",
+		"FREE_CONTEXT_CODEX_BIN="+fakeCodex,
+		"XDG_STATE_HOME="+stateBase,
+		"XDG_RUNTIME_DIR="+runtimeBase,
+	)
+	command.Stdin = strings.NewReader("finish migration\nall rows copied\n\n")
+	output, err := command.CombinedOutput()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("free-context run: %v\n%s", err, output)
 	}
-	if _, err := writer.WriteString("finish migration\nall rows copied\n\n"); err != nil {
-		t.Fatal(err)
-	}
-	writer.Close()
-	previousStdin := os.Stdin
-	os.Stdin = input
-	defer func() {
-		os.Stdin = previousStdin
-		input.Close()
-		cancelServer()
-		<-serverDone
-	}()
-
-	if err := runSession(context.Background(), layout); err != nil {
-		t.Fatalf("run session: %v", err)
-	}
-	if recorder.exits != 1 {
-		t.Fatalf("foreground exit events = %d, want 1", recorder.exits)
+	if recorder.exits.Load() != 1 {
+		t.Fatalf("foreground exit events = %d, want 1", recorder.exits.Load())
 	}
 }

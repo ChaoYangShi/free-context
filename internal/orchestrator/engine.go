@@ -62,8 +62,8 @@ func (e *Engine) Execute(ctx context.Context, command any) (Outcome, error) {
 		return e.completeRootTransfer(ctx, command)
 	case TurnEnded:
 		return e.turnEnded(ctx, command)
-	case ForegroundExited:
-		return e.foregroundExited(ctx, command)
+	case FinalizeReportedCompletion:
+		return e.finalizeReportedCompletion(ctx, command)
 	case ThreadTurnStarted:
 		return e.threadTurnStarted(ctx, command)
 	case UpdateThreadMetadata:
@@ -610,7 +610,7 @@ func (e *Engine) turnEnded(ctx context.Context, command TurnEnded) (Outcome, err
 	}
 }
 
-func (e *Engine) foregroundExited(ctx context.Context, command ForegroundExited) (Outcome, error) {
+func (e *Engine) finalizeReportedCompletion(ctx context.Context, command FinalizeReportedCompletion) (Outcome, error) {
 	run, err := e.repository.Load(ctx, command.RunID)
 	if err != nil {
 		return Outcome{}, fmt.Errorf("load run: %w", err)

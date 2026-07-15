@@ -93,7 +93,7 @@ Subagents are never promoted to root. The new root decides the new worker count 
 - Quiescence, handoff generation, parent acceptance, and root acceptance each have a fixed 30-minute timeout.
 - Any transition failure is fail-closed: no unvalidated successor may write, compaction does not proceed, and the run becomes `blocked`.
 - User input requested by a background agent blocks the run. The user resumes interaction with `free-context attach <run_id>`.
-- Run state and handoffs are atomically persisted under `$XDG_STATE_HOME/free-context/runs/<run_id>/`. Root completion is persisted before the app-server stops, then the completed run directory is deleted. Stopped runs are retained until explicitly deleted.
+- Run state and handoffs are atomically persisted under `$XDG_STATE_HOME/free-context/runs/<run_id>/`. Root completion is persisted before the app-server stops, then the completed run directory is deleted. Daemon recovery removes a completed run left by an interrupted shutdown. Stopped runs are retained until explicitly deleted.
 - The daemon automatically recovers incomplete runs after restart. It must first establish that the prior managed app-server is no longer running; uncertain process ownership blocks recovery.
 
 ## CLI Interface

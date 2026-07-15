@@ -20,7 +20,18 @@ func RecoverPersistedRuns(ctx context.Context, controller *Controller, engine *o
 	if err != nil {
 		return err
 	}
+	var completedCleanupError error
 	for _, run := range runs {
+		if run.Status == orchestrator.RunComplete {
+			if err := stopOwnedAppServer(ctx, run); err != nil {
+				completedCleanupError = errors.Join(completedCleanupError, fmt.Errorf("stop completed run %s app-server: %w", run.ID, err))
+				continue
+			}
+			if err := repository.Delete(ctx, run.ID); err != nil {
+				completedCleanupError = errors.Join(completedCleanupError, fmt.Errorf("delete completed run %s: %w", run.ID, err))
+			}
+			continue
+		}
 		if run.Status != orchestrator.RunStarting && run.Status != orchestrator.RunActive && run.Status != orchestrator.RunTransitioning {
 			continue
 		}
@@ -34,7 +45,7 @@ func RecoverPersistedRuns(ctx context.Context, controller *Controller, engine *o
 		}
 		_ = controller.Recover(ctx, run.ID)
 	}
-	return nil
+	return completedCleanupError
 }
 
 func stopOwnedAppServer(ctx context.Context, run orchestrator.Run) error {

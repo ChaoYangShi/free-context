@@ -281,7 +281,7 @@ type TurnEnded struct {
 	ThreadID string
 }
 
-type ForegroundExited struct {
+type FinalizeReportedCompletion struct {
 	RunID string
 }
 

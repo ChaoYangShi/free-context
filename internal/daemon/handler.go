@@ -172,8 +172,8 @@ func (h *Handler) run(response http.ResponseWriter, request *http.Request, id st
 			writeDomainError(response, err)
 			return
 		}
-		if run.Status != orchestrator.RunStopped {
-			writeError(response, http.StatusConflict, "run must be stopped before deletion")
+		if run.Status != orchestrator.RunComplete && run.Status != orchestrator.RunStopped {
+			writeError(response, http.StatusConflict, "run must be completed or stopped before deletion")
 			return
 		}
 		if err := h.repository.Delete(request.Context(), id); err != nil {

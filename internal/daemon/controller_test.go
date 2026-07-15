@@ -174,7 +174,7 @@ func TestControllerRemovesCompletedRunWhenForegroundExits(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	outcome, err := controller.Execute(ctx, orchestrator.ForegroundExited{RunID: runID})
+	outcome, err := controller.Execute(ctx, orchestrator.FinalizeReportedCompletion{RunID: runID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestControllerKeepsIncompleteRunWhenForegroundExits(t *testing.T) {
 	controller, servers, runID := newTestController(t)
 	ctx := context.Background()
 
-	outcome, err := controller.Execute(ctx, orchestrator.ForegroundExited{RunID: runID})
+	outcome, err := controller.Execute(ctx, orchestrator.FinalizeReportedCompletion{RunID: runID})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -43,7 +43,7 @@ Commands:
   free-context inspect [run_id]            Show a run's persisted state
   free-context attach [run_id]             Attach to an active run
   free-context stop [run_id]               Stop an active run
-  free-context delete <run_id>             Delete a stopped run
+  free-context delete <run_id>             Delete a completed or stopped run
   free-context daemon start|stop|status     Manage the user daemon
   free-context mcp                         Start the MCP server
   free-context hook <hook_name>            Serve a Codex command hook
@@ -126,8 +126,8 @@ func run(ctx context.Context, arguments []string) error {
 		if err != nil {
 			return err
 		}
-		if run.Status != orchestrator.RunStopped {
-			return errors.New("run must be stopped before deletion")
+		if run.Status != orchestrator.RunComplete && run.Status != orchestrator.RunStopped {
+			return errors.New("run must be completed or stopped before deletion")
 		}
 		if err := client.Delete(ctx, arguments[1]); err != nil {
 			return err
@@ -222,7 +222,7 @@ func runForeground(ctx context.Context, client *daemon.Client, runID string, com
 	signal.Notify(interrupts, os.Interrupt)
 	defer signal.Stop(interrupts)
 	commandErr := command.Run()
-	outcome, exitErr := client.Execute(ctx, daemon.CommandForegroundExited, orchestrator.ForegroundExited{RunID: runID})
+	outcome, exitErr := client.Execute(ctx, daemon.CommandFinalizeCompletion, orchestrator.FinalizeReportedCompletion{RunID: runID})
 	if errors.Is(exitErr, daemon.ErrNotFound) {
 		return orchestrator.Run{}, nil
 	}
