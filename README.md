@@ -44,6 +44,21 @@ Show the built-in command reference at any time:
 free-context --help
 ```
 
+Enable Bash completion for the current shell:
+
+```bash
+source <(free-context completion bash)
+```
+
+To enable it for future Bash sessions, save the generated script in the standard completion directory:
+
+```bash
+mkdir -p ~/.local/share/bash-completion/completions
+free-context completion bash > ~/.local/share/bash-completion/completions/free-context
+```
+
+Completion includes command values, daemon and hook subcommands, and run IDs valid for the selected operation. Run-ID candidates require the Free Context daemon to be running.
+
 Operational commands can be called from any terminal:
 
 ```text
@@ -53,7 +68,11 @@ free-context attach [run_id]
 free-context stop [run_id]
 free-context inspect [run_id]
 free-context delete <run_id>
-free-context daemon start|stop|status
+free-context daemon start|stop|status|serve
+free-context completion bash
+free-context mcp
+free-context hook <pre-compact|pre-tool-use>
+free-context pre-compact|pre-tool-use
 free-context --version
 ```
 

@@ -104,11 +104,13 @@ free-context list
 free-context status [run_id]
 free-context attach [run_id]
 free-context stop [run_id]
-free-context inspect <run_id>
+free-context inspect [run_id]
 free-context delete <run_id>
-free-context daemon start|stop|status
+free-context daemon start|stop|status|serve
+free-context completion bash
 free-context mcp
-free-context hook
+free-context hook <pre-compact|pre-tool-use>
+free-context pre-compact|pre-tool-use
 ```
 
 `run` interactively requests an objective and one or more completion criteria before opening the initial remote Codex TUI.

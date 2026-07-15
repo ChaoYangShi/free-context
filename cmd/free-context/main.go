@@ -30,6 +30,44 @@ import (
 
 const version = "0.1.0"
 
+type runIDCompletion int
+
+const (
+	noRunIDs runIDCompletion = iota
+	allRunIDs
+	nonTerminalRunIDs
+	terminalRunIDs
+)
+
+type commandDefinition struct {
+	name             string
+	usage            string
+	minimumArguments int
+	maximumArguments int
+	values           []string
+	valueKind        string
+	runIDs           runIDCompletion
+}
+
+var commandDefinitions = []commandDefinition{
+	{name: "run", usage: "free-context run"},
+	{name: "list", usage: "free-context list"},
+	{name: "status", usage: "free-context status [run_id]", maximumArguments: 1, runIDs: allRunIDs},
+	{name: "inspect", usage: "free-context inspect [run_id]", maximumArguments: 1, runIDs: allRunIDs},
+	{name: "attach", usage: "free-context attach [run_id]", maximumArguments: 1, runIDs: nonTerminalRunIDs},
+	{name: "stop", usage: "free-context stop [run_id]", maximumArguments: 1, runIDs: nonTerminalRunIDs},
+	{name: "delete", usage: "free-context delete <run_id>", minimumArguments: 1, maximumArguments: 1, runIDs: terminalRunIDs},
+	{name: "daemon", usage: "free-context daemon <start|stop|status|serve>", minimumArguments: 1, maximumArguments: 1, values: []string{"start", "stop", "status", "serve"}, valueKind: "daemon command"},
+	{name: "completion", usage: "free-context completion <bash>", minimumArguments: 1, maximumArguments: 1, values: []string{"bash"}, valueKind: "completion shell"},
+	{name: "mcp", usage: "free-context mcp"},
+	{name: "hook", usage: "free-context hook <pre-compact|pre-tool-use>", minimumArguments: 1, maximumArguments: 1, values: []string{"pre-compact", "pre-tool-use"}, valueKind: "hook"},
+	{name: "version", usage: "free-context --version"},
+	{name: "--version", usage: "free-context --version"},
+	{name: "-v", usage: "free-context --version"},
+	{name: "pre-compact", usage: "free-context pre-compact"},
+	{name: "pre-tool-use", usage: "free-context pre-tool-use"},
+}
+
 const helpText = `Free Context supervises long-running Codex agent trees.
 
 Usage:
@@ -44,10 +82,25 @@ Commands:
   free-context attach [run_id]             Attach to an active run
   free-context stop [run_id]               Stop an active run
   free-context delete <run_id>             Delete a completed or stopped run
-  free-context daemon start|stop|status     Manage the user daemon
+  free-context daemon start|stop|status|serve
+                                             Manage or serve the user daemon
+  free-context completion bash             Print the Bash completion script
   free-context mcp                         Start the MCP server
   free-context hook <hook_name>            Serve a Codex command hook
+  free-context pre-compact|pre-tool-use     Serve an injected command hook
   free-context --version                   Show the version
+`
+
+const bashCompletionScript = `# Bash completion for free-context.
+_free_context_complete() {
+  local -a candidates=()
+  local candidate
+  while IFS= read -r candidate; do
+    candidates+=("$candidate")
+  done < <(free-context __complete "${COMP_WORDS[@]:1:COMP_CWORD}" 2>/dev/null)
+  COMPREPLY=("${candidates[@]}")
+}
+complete -F _free_context_complete free-context
 `
 
 func main() {
@@ -59,10 +112,27 @@ func main() {
 
 func run(ctx context.Context, arguments []string) error {
 	if len(arguments) == 0 {
-		return errors.New("command is required")
+		return errors.New("command is required; run free-context --help for command details")
+	}
+	if arguments[0] == "__complete" {
+		return complete(ctx, arguments[1:])
 	}
 	if arguments[0] == "--help" {
+		if len(arguments) != 1 {
+			return usageError("free-context --help")
+		}
 		_, err := fmt.Fprint(os.Stdout, helpText)
+		return err
+	}
+	definition, exists := findCommand(arguments[0])
+	if !exists {
+		return unknownValueError("command", arguments[0], commandNames())
+	}
+	if err := validateArguments(definition, arguments[1:]); err != nil {
+		return err
+	}
+	if definition.name == "completion" {
+		_, err := fmt.Fprint(os.Stdout, bashCompletionScript)
 		return err
 	}
 	layout, err := paths.Resolve()
@@ -115,9 +185,6 @@ func run(ctx context.Context, arguments []string) error {
 		outcome, err := client.Execute(ctx, daemon.CommandStopRun, orchestrator.StopRun{RunID: id})
 		return output(outcome.Run, err)
 	case "delete":
-		if len(arguments) != 2 {
-			return errors.New("usage: free-context delete <run_id>")
-		}
 		client, err := liveClient(ctx, layout)
 		if err != nil {
 			return err
@@ -142,9 +209,6 @@ func run(ctx context.Context, arguments []string) error {
 		}
 		return mcp.NewServer(handler.RunID, handler.Commander).Serve(ctx, os.Stdin, os.Stdout)
 	case "hook":
-		if len(arguments) != 2 {
-			return errors.New("usage: free-context hook <pre-compact|pre-tool-use>")
-		}
 		handler, err := hooks.FromEnvironment()
 		if err != nil {
 			return err
@@ -159,8 +223,177 @@ func run(ctx context.Context, arguments []string) error {
 	case "version", "--version", "-v":
 		return output(map[string]string{"version": version}, nil)
 	default:
-		return fmt.Errorf("unknown command %q", arguments[0])
+		return unknownValueError("command", arguments[0], commandNames())
 	}
+}
+
+func validateArguments(definition commandDefinition, arguments []string) error {
+	if len(arguments) < definition.minimumArguments || len(arguments) > definition.maximumArguments {
+		return usageError(definition.usage)
+	}
+	if len(definition.values) == 0 || contains(definition.values, arguments[0]) {
+		return nil
+	}
+	return unknownValueError(definition.valueKind, arguments[0], definition.values)
+}
+
+func findCommand(name string) (commandDefinition, bool) {
+	for _, definition := range commandDefinitions {
+		if definition.name == name {
+			return definition, true
+		}
+	}
+	return commandDefinition{}, false
+}
+
+func commandNames() []string {
+	values := []string{"--help"}
+	for _, definition := range commandDefinitions {
+		values = append(values, definition.name)
+	}
+	return values
+}
+
+func runIDAllowed(completion runIDCompletion, status orchestrator.RunStatus) bool {
+	terminal := status == orchestrator.RunComplete || status == orchestrator.RunStopped
+	switch completion {
+	case allRunIDs:
+		return true
+	case nonTerminalRunIDs:
+		return !terminal
+	case terminalRunIDs:
+		return terminal
+	default:
+		return false
+	}
+}
+
+func complete(ctx context.Context, arguments []string) error {
+	values := commandNames()
+	if len(arguments) == 0 {
+		return outputCompletions(values)
+	}
+	if len(arguments) > 2 {
+		return nil
+	}
+	if len(arguments) == 1 {
+		return outputCompletions(completionValues(values, arguments[0]))
+	}
+	definition, exists := findCommand(arguments[0])
+	if !exists {
+		return nil
+	}
+	prefix := arguments[1]
+	if definition.runIDs == noRunIDs {
+		return outputCompletions(completionValues(definition.values, prefix))
+	}
+	layout, err := paths.Resolve()
+	if err != nil {
+		return err
+	}
+	client, err := liveClient(ctx, layout)
+	if err != nil {
+		return err
+	}
+	runs, err := client.List(ctx)
+	if err != nil {
+		return err
+	}
+	runIDs := make([]string, 0, len(runs))
+	for _, run := range runs {
+		if runIDAllowed(definition.runIDs, run.Status) {
+			runIDs = append(runIDs, run.ID)
+		}
+	}
+	return outputCompletions(completionValues(runIDs, prefix))
+}
+
+func completionValues(values []string, prefix string) []string {
+	matches := make([]string, 0, len(values))
+	for _, value := range values {
+		if strings.HasPrefix(value, prefix) {
+			matches = append(matches, value)
+		}
+	}
+	return matches
+}
+
+func outputCompletions(values []string) error {
+	for _, value := range values {
+		if _, err := fmt.Fprintln(os.Stdout, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func usageError(usage string) error {
+	return fmt.Errorf("usage: %s; run free-context --help for command details", usage)
+}
+
+func unknownValueError(kind, value string, candidates []string) error {
+	message := fmt.Sprintf("unknown %s %q", kind, value)
+	if suggestion := closest(value, candidates); suggestion != "" {
+		message += fmt.Sprintf("; did you mean %q?", suggestion)
+	}
+	if kind == "command" {
+		message += "; run free-context --help for command details"
+	}
+	return errors.New(message)
+}
+
+func closest(value string, candidates []string) string {
+	best := ""
+	bestDistance := 0
+	for _, candidate := range candidates {
+		distance := editDistance(strings.ToLower(value), strings.ToLower(candidate))
+		if best == "" || distance < bestDistance {
+			best, bestDistance = candidate, distance
+		}
+	}
+	if best == "" || bestDistance > 2 {
+		return ""
+	}
+	return best
+}
+
+func editDistance(left, right string) int {
+	previous := make([]int, len(right)+1)
+	for index := range previous {
+		previous[index] = index
+	}
+	for i, leftChar := range left {
+		current := make([]int, len(right)+1)
+		current[0] = i + 1
+		for j, rightChar := range right {
+			cost := 0
+			if leftChar != rightChar {
+				cost = 1
+			}
+			current[j+1] = min(previous[j+1]+1, current[j]+1, previous[j]+cost)
+		}
+		previous = current
+	}
+	return previous[len(right)]
+}
+
+func min(values ...int) int {
+	best := values[0]
+	for _, value := range values[1:] {
+		if value < best {
+			best = value
+		}
+	}
+	return best
+}
+
+func contains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func runSession(ctx context.Context, layout paths.Layout) error {
@@ -273,7 +506,7 @@ func attach(ctx context.Context, layout paths.Layout, arguments []string) error 
 
 func daemonCommand(ctx context.Context, layout paths.Layout, arguments []string) error {
 	if len(arguments) != 1 {
-		return errors.New("usage: free-context daemon <start|stop|status|serve>")
+		return usageError("free-context daemon <start|stop|status|serve>")
 	}
 	switch arguments[0] {
 	case "start":
@@ -317,7 +550,7 @@ func daemonCommand(ctx context.Context, layout paths.Layout, arguments []string)
 	case "serve":
 		return serveDaemon(layout)
 	default:
-		return fmt.Errorf("unknown daemon command %q", arguments[0])
+		return unknownValueError("daemon command", arguments[0], []string{"start", "stop", "status", "serve"})
 	}
 }
 
