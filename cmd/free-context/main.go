@@ -43,7 +43,7 @@ Commands:
   free-context inspect [run_id]            Show a run's persisted state
   free-context attach [run_id]             Attach to an active run
   free-context stop [run_id]               Stop an active run
-  free-context delete <run_id>             Delete a completed or stopped run
+  free-context delete <run_id>             Delete a stopped run
   free-context daemon start|stop|status     Manage the user daemon
   free-context mcp                         Start the MCP server
   free-context hook <hook_name>            Serve a Codex command hook
@@ -126,8 +126,8 @@ func run(ctx context.Context, arguments []string) error {
 		if err != nil {
 			return err
 		}
-		if run.Status != orchestrator.RunComplete && run.Status != orchestrator.RunStopped {
-			return errors.New("run must be completed or stopped before deletion")
+		if run.Status != orchestrator.RunStopped {
+			return errors.New("run must be stopped before deletion")
 		}
 		if err := client.Delete(ctx, arguments[1]); err != nil {
 			return err
@@ -210,11 +210,34 @@ func runSession(ctx context.Context, layout paths.Layout) error {
 	command.Stdin = os.Stdin
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
-	if err := command.Run(); err != nil {
-		return fmt.Errorf("remote Codex TUI exited: %w", err)
+	current, err := runForeground(ctx, client, outcome.Run.ID, command)
+	if err != nil || current.ID == "" {
+		return err
 	}
-	current, err := client.Run(ctx, outcome.Run.ID)
-	return output(current, err)
+	return output(current, nil)
+}
+
+func runForeground(ctx context.Context, client *daemon.Client, runID string, command *exec.Cmd) (orchestrator.Run, error) {
+	interrupts := make(chan os.Signal, 1)
+	signal.Notify(interrupts, os.Interrupt)
+	defer signal.Stop(interrupts)
+	commandErr := command.Run()
+	outcome, exitErr := client.Execute(ctx, daemon.CommandForegroundExited, orchestrator.ForegroundExited{RunID: runID})
+	if errors.Is(exitErr, daemon.ErrNotFound) {
+		return orchestrator.Run{}, nil
+	}
+	if exitErr != nil {
+		return orchestrator.Run{}, exitErr
+	}
+	if commandErr != nil {
+		select {
+		case <-interrupts:
+			return outcome.Run, nil
+		default:
+			return orchestrator.Run{}, fmt.Errorf("remote Codex TUI exited: %w", commandErr)
+		}
+	}
+	return outcome.Run, nil
 }
 
 func attach(ctx context.Context, layout paths.Layout, arguments []string) error {
@@ -244,7 +267,8 @@ func attach(ctx context.Context, layout paths.Layout, arguments []string) error 
 	command.Stdin = os.Stdin
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
-	return command.Run()
+	_, err = runForeground(ctx, client, id, command)
+	return err
 }
 
 func daemonCommand(ctx context.Context, layout paths.Layout, arguments []string) error {

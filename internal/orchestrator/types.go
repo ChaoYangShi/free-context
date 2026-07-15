@@ -186,6 +186,7 @@ const (
 	EffectStartNextTurn     EffectKind = "start_next_turn"
 	EffectBlockTree         EffectKind = "block_tree"
 	EffectStopAppServer     EffectKind = "stop_app_server"
+	EffectDeleteRun         EffectKind = "delete_run"
 )
 
 type Effect struct {
@@ -278,6 +279,10 @@ type CompleteRootTransfer struct {
 type TurnEnded struct {
 	RunID    string
 	ThreadID string
+}
+
+type ForegroundExited struct {
+	RunID string
 }
 
 type ThreadTurnStarted struct {

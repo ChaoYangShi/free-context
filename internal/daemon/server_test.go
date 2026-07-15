@@ -68,6 +68,9 @@ func TestUnixServerAndClientRoundTrip(t *testing.T) {
 	if loaded.Objective != "migrate" || loaded.Threads["root-1"].Progress.NextAction != "continue migration" {
 		t.Fatalf("loaded = %#v", loaded)
 	}
+	if _, err := client.Run(context.Background(), "missing"); !errors.Is(err, daemon.ErrNotFound) {
+		t.Fatalf("missing run error = %v, want ErrNotFound", err)
+	}
 
 	cancel()
 	if err := <-serverDone; err != nil && !errors.Is(err, context.Canceled) {

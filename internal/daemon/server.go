@@ -16,6 +16,8 @@ import (
 	"github.com/ChaoYangShi/free-context/internal/orchestrator"
 )
 
+var ErrNotFound = errors.New("daemon resource not found")
+
 func Serve(ctx context.Context, socket string, handler http.Handler) error {
 	return ServeReady(ctx, socket, handler, nil)
 }
@@ -185,7 +187,11 @@ func (c *Client) request(ctx context.Context, method, path string, input any, wa
 	defer response.Body.Close()
 	if response.StatusCode != wantStatus {
 		data, _ := io.ReadAll(io.LimitReader(response.Body, 16<<10))
-		return fmt.Errorf("daemon returned %d: %s", response.StatusCode, bytes.TrimSpace(data))
+		err := fmt.Errorf("daemon returned %d: %s", response.StatusCode, bytes.TrimSpace(data))
+		if response.StatusCode == http.StatusNotFound {
+			return fmt.Errorf("%w: %v", ErrNotFound, err)
+		}
+		return err
 	}
 	if output == nil {
 		return nil

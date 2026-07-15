@@ -62,6 +62,8 @@ func (e *Engine) Execute(ctx context.Context, command any) (Outcome, error) {
 		return e.completeRootTransfer(ctx, command)
 	case TurnEnded:
 		return e.turnEnded(ctx, command)
+	case ForegroundExited:
+		return e.foregroundExited(ctx, command)
 	case ThreadTurnStarted:
 		return e.threadTurnStarted(ctx, command)
 	case UpdateThreadMetadata:
@@ -599,10 +601,25 @@ func (e *Engine) turnEnded(ctx context.Context, command TurnEnded) (Outcome, err
 			}
 		}
 		run.Status = RunComplete
-		return e.save(ctx, run, []Effect{{Kind: EffectStopAppServer, ThreadID: thread.ID}})
+		return e.save(ctx, run, []Effect{
+			{Kind: EffectStopAppServer, ThreadID: thread.ID},
+			{Kind: EffectDeleteRun},
+		})
 	default:
 		return e.block(ctx, run, "root turn ended without a valid progress status")
 	}
+}
+
+func (e *Engine) foregroundExited(ctx context.Context, command ForegroundExited) (Outcome, error) {
+	run, err := e.repository.Load(ctx, command.RunID)
+	if err != nil {
+		return Outcome{}, fmt.Errorf("load run: %w", err)
+	}
+	root, exists := run.Threads[run.RootThreadID]
+	if run.Status != RunActive || !exists || root.Status != ThreadActive || root.Progress.Status != ProgressCompleted {
+		return Outcome{Run: run}, nil
+	}
+	return e.turnEnded(ctx, TurnEnded{RunID: run.ID, ThreadID: root.ID})
 }
 
 func (e *Engine) block(ctx context.Context, run Run, reason string) (Outcome, error) {

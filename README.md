@@ -59,6 +59,8 @@ free-context --version
 
 Run state and immutable handoffs are stored under `$XDG_STATE_HOME/free-context`. Runtime sockets are stored under `$XDG_RUNTIME_DIR/free-context` when it is set.
 
+Completed runs stop their managed app-server and are removed automatically. `Ctrl+C` reports the foreground TUI exit before `run` or `attach` ends, so a root that already reported completion is finalized; incomplete runs remain available to `attach`. Stopped runs remain until removed with `free-context delete <run_id>`.
+
 ## Lifecycle
 
 `PreCompact` never allows a managed thread to compact. Free Context waits for currently executing tool items to complete, blocks new tool calls, creates schema-constrained handoff JSON with an ephemeral handoff agent, and then retires or replaces the affected thread. A replacement root starts read-only and receives the original sandbox only after explicitly accepting the tree handoff.

@@ -362,7 +362,7 @@ func TestRootTurnEndUsesExplicitProgressAsItsOnlyContinuationSignal(t *testing.T
 		if outcome.Run.Status != RunComplete {
 			t.Fatalf("status = %q", outcome.Run.Status)
 		}
-		assertEffectKinds(t, outcome.Effects, EffectStopAppServer)
+		assertEffectKinds(t, outcome.Effects, EffectStopAppServer, EffectDeleteRun)
 	})
 }
 

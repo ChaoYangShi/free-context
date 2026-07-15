@@ -126,10 +126,15 @@ func (c *Controller) Execute(ctx context.Context, command any) (orchestrator.Out
 		return orchestrator.Outcome{}, err
 	}
 	if err := c.apply(ctx, outcome); err != nil {
-		if _, blockErr := c.Engine.Execute(ctx, orchestrator.BlockRun{RunID: outcome.Run.ID, Reason: err.Error()}); blockErr == nil {
-			_ = c.applyCurrentRunBlock(ctx, outcome.Run.ID)
+		if outcome.Run.Status != orchestrator.RunComplete {
+			if _, blockErr := c.Engine.Execute(ctx, orchestrator.BlockRun{RunID: outcome.Run.ID, Reason: err.Error()}); blockErr == nil {
+				_ = c.applyCurrentRunBlock(ctx, outcome.Run.ID)
+			}
 		}
 		return orchestrator.Outcome{}, err
+	}
+	if outcome.Run.Status == orchestrator.RunComplete {
+		return orchestrator.Outcome{Run: outcome.Run}, nil
 	}
 	current, err := c.Repository.Load(ctx, outcome.Run.ID)
 	if err != nil {
@@ -320,6 +325,8 @@ func (c *Controller) applyEffect(ctx context.Context, runID string, effect orche
 		return nil
 	case orchestrator.EffectStopAppServer:
 		return c.AppServers.Stop(runID)
+	case orchestrator.EffectDeleteRun:
+		return c.Repository.Delete(ctx, runID)
 	default:
 		return fmt.Errorf("unsupported effect %q", effect.Kind)
 	}

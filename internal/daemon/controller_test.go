@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -159,6 +160,51 @@ func TestControllerCompletesRootTransferOnlyAfterExplicitAcceptance(t *testing.T
 	}
 	if len(servers.runtime.settings) != 1 || servers.runtime.settings[0] != "root-2:gpt-test:workspace-write" {
 		t.Fatalf("sandbox was not restored: %v", servers.runtime.settings)
+	}
+}
+
+func TestControllerRemovesCompletedRunWhenForegroundExits(t *testing.T) {
+	controller, servers, runID := newTestController(t)
+	ctx := context.Background()
+	if _, err := controller.Execute(ctx, orchestrator.ReportProgress{
+		RunID: runID, ThreadID: "root-1", Status: orchestrator.ProgressCompleted,
+		CompletedWork: []string{"migration finished"}, InProgressWork: []string{},
+		NextAction: "", Blockers: []string{}, Artifacts: []string{"report.json"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	outcome, err := controller.Execute(ctx, orchestrator.ForegroundExited{RunID: runID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Run.Status != orchestrator.RunComplete {
+		t.Fatalf("run status = %q, want completed", outcome.Run.Status)
+	}
+	if !servers.stopped {
+		t.Fatal("app-server was not stopped")
+	}
+	if _, err := controller.Repository.Load(ctx, runID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("load completed run error = %v, want not found", err)
+	}
+}
+
+func TestControllerKeepsIncompleteRunWhenForegroundExits(t *testing.T) {
+	controller, servers, runID := newTestController(t)
+	ctx := context.Background()
+
+	outcome, err := controller.Execute(ctx, orchestrator.ForegroundExited{RunID: runID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Run.Status != orchestrator.RunActive {
+		t.Fatalf("run status = %q, want active", outcome.Run.Status)
+	}
+	if servers.stopped {
+		t.Fatal("app-server was stopped for incomplete run")
+	}
+	if _, err := controller.Repository.Load(ctx, runID); err != nil {
+		t.Fatalf("load incomplete run: %v", err)
 	}
 }
 

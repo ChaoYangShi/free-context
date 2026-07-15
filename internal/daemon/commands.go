@@ -21,6 +21,7 @@ const (
 	CommandRegisterReplacementRoot CommandKind = "register_replacement_root"
 	CommandCompleteRootTransfer    CommandKind = "complete_root_transfer"
 	CommandTurnEnded               CommandKind = "turn_ended"
+	CommandForegroundExited        CommandKind = "foreground_exited"
 	CommandBlockRun                CommandKind = "block_run"
 	CommandThreadTurnStarted       CommandKind = "thread_turn_started"
 	CommandStopRun                 CommandKind = "stop_run"
@@ -62,6 +63,8 @@ func decodeCommand(envelope commandEnvelope) (any, error) {
 		target = &orchestrator.CompleteRootTransfer{}
 	case CommandTurnEnded:
 		target = &orchestrator.TurnEnded{}
+	case CommandForegroundExited:
+		target = &orchestrator.ForegroundExited{}
 	case CommandBlockRun:
 		target = &orchestrator.BlockRun{}
 	case CommandThreadTurnStarted:
@@ -108,6 +111,8 @@ func decodeCommand(envelope commandEnvelope) (any, error) {
 	case *orchestrator.CompleteRootTransfer:
 		return *command, nil
 	case *orchestrator.TurnEnded:
+		return *command, nil
+	case *orchestrator.ForegroundExited:
 		return *command, nil
 	case *orchestrator.BlockRun:
 		return *command, nil

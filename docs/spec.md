@@ -29,6 +29,8 @@ Lifecycle state comes from app-server. Semantic progress comes from MCP.
 
 When a background root turn ends while the run is active, the daemon starts another turn only when the root reported an explicit `next_action`. Missing terminal status and missing `next_action` blocks the run.
 
+When a foreground Codex TUI opened by `run` or `attach` exits, it reports that event to the daemon before the command exits. If the root already reported `completed`, the daemon applies the same terminal validation used by `turn/completed`. An incomplete run remains active and attachable.
+
 ## Handoff
 
 Handoffs are immutable JSON documents. Every field is required; arrays may be empty. Existing files, diffs, plans, issues, and other artifacts are referenced rather than copied. Sensitive values are redacted.
@@ -91,7 +93,7 @@ Subagents are never promoted to root. The new root decides the new worker count 
 - Quiescence, handoff generation, parent acceptance, and root acceptance each have a fixed 30-minute timeout.
 - Any transition failure is fail-closed: no unvalidated successor may write, compaction does not proceed, and the run becomes `blocked`.
 - User input requested by a background agent blocks the run. The user resumes interaction with `free-context attach <run_id>`.
-- Run state and handoffs are atomically persisted under `$XDG_STATE_HOME/free-context/runs/<run_id>/` and retained after terminal states.
+- Run state and handoffs are atomically persisted under `$XDG_STATE_HOME/free-context/runs/<run_id>/`. Root completion is persisted before the app-server stops, then the completed run directory is deleted. Stopped runs are retained until explicitly deleted.
 - The daemon automatically recovers incomplete runs after restart. It must first establish that the prior managed app-server is no longer running; uncertain process ownership blocks recovery.
 
 ## CLI Interface
