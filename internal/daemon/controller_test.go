@@ -208,6 +208,45 @@ func TestControllerKeepsIncompleteRunWhenForegroundExits(t *testing.T) {
 	}
 }
 
+func TestControllerRecordsTokenCapacityNotification(t *testing.T) {
+	controller, _, runID := newTestController(t)
+	ctx := context.Background()
+
+	controller.HandleNotification(runID, []byte(`{
+		"method": "thread/tokenUsage/updated",
+		"params": {
+			"threadId": "root-1",
+			"turnId": "turn-root",
+			"tokenUsage": {
+				"total": {
+					"totalTokens": 164000,
+					"inputTokens": 150000,
+					"cachedInputTokens": 10000,
+					"outputTokens": 9000,
+					"reasoningOutputTokens": 5000
+				},
+				"last": {"totalTokens": 1200},
+				"modelContextWindow": 200000
+			}
+		}
+	}`))
+
+	run, err := controller.Repository.Load(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := run.Threads["root-1"]
+	if run.Status != orchestrator.RunActive || root.Status != orchestrator.ThreadActive {
+		t.Fatalf("token capacity notification changed lifecycle: run=%s root=%s", run.Status, root.Status)
+	}
+	if root.TokenCapacity == nil {
+		t.Fatal("token capacity snapshot was not recorded")
+	}
+	if root.TokenCapacity.TurnID != "turn-root" || root.TokenCapacity.TotalTokens != 164000 || root.TokenCapacity.LastTotalTokens != 1200 || root.TokenCapacity.ModelContextWindow != 200000 {
+		t.Fatalf("token capacity = %#v", root.TokenCapacity)
+	}
+}
+
 func newTestController(t *testing.T) (*Controller, *fakeAppServers, string) {
 	t.Helper()
 	workspace := t.TempDir()

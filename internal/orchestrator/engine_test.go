@@ -137,6 +137,63 @@ func TestRegisterThreadsAndReportProgress(t *testing.T) {
 	}
 }
 
+func TestRecordTokenCapacityPersistsLatestThreadSnapshot(t *testing.T) {
+	t.Parallel()
+
+	engine, repository := startTestRun(t)
+	ctx := context.Background()
+	if _, err := engine.Execute(ctx, RegisterThread{
+		RunID:          "run-1",
+		ThreadID:       "root-1",
+		Role:           RoleRoot,
+		AssignedTask:   "own the migration plan",
+		Model:          "gpt-test",
+		TranscriptPath: "/sessions/root.jsonl",
+		TurnID:         "turn-root",
+	}); err != nil {
+		t.Fatalf("register root: %v", err)
+	}
+
+	outcome, err := engine.Execute(ctx, RecordTokenCapacity{
+		RunID:    "run-1",
+		ThreadID: "root-1",
+		Snapshot: TokenCapacitySnapshot{
+			TurnID:                "turn-root",
+			TotalTokens:           164000,
+			InputTokens:           150000,
+			CachedInputTokens:     10000,
+			OutputTokens:          9000,
+			ReasoningOutputTokens: 5000,
+			LastTotalTokens:       1200,
+			ModelContextWindow:    200000,
+		},
+	})
+	if err != nil {
+		t.Fatalf("record token capacity: %v", err)
+	}
+	if len(outcome.Effects) != 0 || outcome.Run.Status != RunActive {
+		t.Fatalf("recording capacity must not affect lifecycle: %#v", outcome)
+	}
+	snapshot := outcome.Run.Threads["root-1"].TokenCapacity
+	if snapshot == nil {
+		t.Fatal("token capacity snapshot was not set")
+	}
+	if snapshot.TotalTokens != 164000 || snapshot.ModelContextWindow != 200000 || snapshot.LastTotalTokens != 1200 {
+		t.Fatalf("snapshot = %#v", snapshot)
+	}
+	if snapshot.ObservedAt.IsZero() {
+		t.Fatal("observed_at was not set")
+	}
+
+	persisted, err := repository.Load(ctx, "run-1")
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if persisted.Threads["root-1"].TokenCapacity == nil || persisted.Threads["root-1"].TokenCapacity.TotalTokens != 164000 {
+		t.Fatalf("snapshot was not persisted: %#v", persisted.Threads["root-1"].TokenCapacity)
+	}
+}
+
 func TestWorkerCompactionPersistsHandoffBeforeStoppingAndSteeringParent(t *testing.T) {
 	t.Parallel()
 
@@ -539,6 +596,13 @@ func (r *memoryRepository) SaveHandoff(_ context.Context, handoff Handoff) error
 func cloneRun(run Run) Run {
 	run.CompletionCriteria = append([]string(nil), run.CompletionCriteria...)
 	run.Threads = cloneMap(run.Threads)
+	for id, thread := range run.Threads {
+		if thread.TokenCapacity != nil {
+			snapshot := *thread.TokenCapacity
+			thread.TokenCapacity = &snapshot
+			run.Threads[id] = thread
+		}
+	}
 	run.Handoffs = cloneMap(run.Handoffs)
 	return run
 }

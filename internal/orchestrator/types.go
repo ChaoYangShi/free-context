@@ -80,18 +80,19 @@ type Run struct {
 }
 
 type Thread struct {
-	ID                 string       `json:"thread_id"`
-	ParentThreadID     string       `json:"parent_thread_id"`
-	Role               ThreadRole   `json:"role"`
-	AssignedTask       string       `json:"assigned_task"`
-	Model              string       `json:"model"`
-	TranscriptPath     string       `json:"transcript_path"`
-	CurrentTurnID      string       `json:"current_turn_id"`
-	Status             ThreadStatus `json:"status"`
-	TransitionDeadline time.Time    `json:"transition_deadline"`
-	InFlightToolIDs    []string     `json:"in_flight_tool_ids"`
-	Progress           Progress     `json:"progress"`
-	AcceptedHandoffs   []string     `json:"accepted_handoffs"`
+	ID                 string                 `json:"thread_id"`
+	ParentThreadID     string                 `json:"parent_thread_id"`
+	Role               ThreadRole             `json:"role"`
+	AssignedTask       string                 `json:"assigned_task"`
+	Model              string                 `json:"model"`
+	TranscriptPath     string                 `json:"transcript_path"`
+	CurrentTurnID      string                 `json:"current_turn_id"`
+	Status             ThreadStatus           `json:"status"`
+	TransitionDeadline time.Time              `json:"transition_deadline"`
+	InFlightToolIDs    []string               `json:"in_flight_tool_ids"`
+	Progress           Progress               `json:"progress"`
+	AcceptedHandoffs   []string               `json:"accepted_handoffs"`
+	TokenCapacity      *TokenCapacitySnapshot `json:"token_capacity,omitempty"`
 }
 
 type Progress struct {
@@ -102,6 +103,18 @@ type Progress struct {
 	Blockers       []string       `json:"blockers"`
 	Artifacts      []string       `json:"artifact_references"`
 	UpdatedAt      time.Time      `json:"updated_at"`
+}
+
+type TokenCapacitySnapshot struct {
+	TurnID                string    `json:"turn_id"`
+	TotalTokens           int       `json:"total_tokens"`
+	InputTokens           int       `json:"input_tokens"`
+	CachedInputTokens     int       `json:"cached_input_tokens"`
+	OutputTokens          int       `json:"output_tokens"`
+	ReasoningOutputTokens int       `json:"reasoning_output_tokens"`
+	LastTotalTokens       int       `json:"last_total_tokens"`
+	ModelContextWindow    int       `json:"model_context_window"`
+	ObservedAt            time.Time `json:"observed_at"`
 }
 
 type HandoffScope string
@@ -295,6 +308,12 @@ type UpdateThreadMetadata struct {
 	RunID    string
 	ThreadID string
 	Model    string
+}
+
+type RecordTokenCapacity struct {
+	RunID    string
+	ThreadID string
+	Snapshot TokenCapacitySnapshot
 }
 
 type BlockRun struct {

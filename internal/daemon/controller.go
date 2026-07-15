@@ -414,6 +414,40 @@ func (c *Controller) HandleNotification(runID string, message json.RawMessage) {
 		if json.Unmarshal(envelope.Params, &params) == nil && params.ThreadID != "" && params.ThreadSettings.Model != "" {
 			_, _ = c.Execute(ctx, orchestrator.UpdateThreadMetadata{RunID: runID, ThreadID: params.ThreadID, Model: params.ThreadSettings.Model})
 		}
+	case "thread/tokenUsage/updated":
+		var params struct {
+			ThreadID   string `json:"threadId"`
+			TurnID     string `json:"turnId"`
+			TokenUsage struct {
+				Total struct {
+					TotalTokens           int `json:"totalTokens"`
+					InputTokens           int `json:"inputTokens"`
+					CachedInputTokens     int `json:"cachedInputTokens"`
+					OutputTokens          int `json:"outputTokens"`
+					ReasoningOutputTokens int `json:"reasoningOutputTokens"`
+				} `json:"total"`
+				Last struct {
+					TotalTokens int `json:"totalTokens"`
+				} `json:"last"`
+				ModelContextWindow int `json:"modelContextWindow"`
+			} `json:"tokenUsage"`
+		}
+		if json.Unmarshal(envelope.Params, &params) == nil && params.ThreadID != "" {
+			_, _ = c.Execute(ctx, orchestrator.RecordTokenCapacity{
+				RunID:    runID,
+				ThreadID: params.ThreadID,
+				Snapshot: orchestrator.TokenCapacitySnapshot{
+					TurnID:                params.TurnID,
+					TotalTokens:           params.TokenUsage.Total.TotalTokens,
+					InputTokens:           params.TokenUsage.Total.InputTokens,
+					CachedInputTokens:     params.TokenUsage.Total.CachedInputTokens,
+					OutputTokens:          params.TokenUsage.Total.OutputTokens,
+					ReasoningOutputTokens: params.TokenUsage.Total.ReasoningOutputTokens,
+					LastTotalTokens:       params.TokenUsage.Last.TotalTokens,
+					ModelContextWindow:    params.TokenUsage.ModelContextWindow,
+				},
+			})
+		}
 	case "item/started":
 		var params struct {
 			ThreadID string `json:"threadId"`

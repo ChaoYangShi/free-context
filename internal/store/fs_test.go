@@ -36,6 +36,19 @@ func TestFSRepositoryPersistsRunsAndImmutableHandoffsAcrossReopen(t *testing.T) 
 	}
 
 	run.Status = orchestrator.RunActive
+	run.RootThreadID = "root-1"
+	run.Threads["root-1"] = orchestrator.Thread{
+		ID:     "root-1",
+		Role:   orchestrator.RoleRoot,
+		Status: orchestrator.ThreadActive,
+		TokenCapacity: &orchestrator.TokenCapacitySnapshot{
+			TurnID:             "turn-root",
+			TotalTokens:        164000,
+			LastTotalTokens:    1200,
+			ModelContextWindow: 200000,
+			ObservedAt:         time.Date(2026, 7, 14, 8, 1, 0, 0, time.UTC),
+		},
+	}
 	run.Revision = 2
 	if err := repository.Save(ctx, run); err != nil {
 		t.Fatalf("save run: %v", err)
@@ -63,6 +76,9 @@ func TestFSRepositoryPersistsRunsAndImmutableHandoffsAcrossReopen(t *testing.T) 
 	}
 	if loaded.Status != orchestrator.RunActive || loaded.Revision != 2 {
 		t.Fatalf("loaded run = %#v", loaded)
+	}
+	if loaded.Threads["root-1"].TokenCapacity == nil || loaded.Threads["root-1"].TokenCapacity.ModelContextWindow != 200000 {
+		t.Fatalf("loaded token capacity = %#v", loaded.Threads["root-1"].TokenCapacity)
 	}
 	loadedHandoff, err := reopened.LoadHandoff(ctx, "run-1", "handoff-1")
 	if err != nil {

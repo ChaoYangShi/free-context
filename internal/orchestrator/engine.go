@@ -68,6 +68,8 @@ func (e *Engine) Execute(ctx context.Context, command any) (Outcome, error) {
 		return e.threadTurnStarted(ctx, command)
 	case UpdateThreadMetadata:
 		return e.updateThreadMetadata(ctx, command)
+	case RecordTokenCapacity:
+		return e.recordTokenCapacity(ctx, command)
 	case BlockRun:
 		return e.blockRun(ctx, command)
 	case StopRun:
@@ -225,6 +227,28 @@ func (e *Engine) updateThreadMetadata(ctx context.Context, command UpdateThreadM
 		return Outcome{}, errors.New("model is required")
 	}
 	thread.Model = command.Model
+	run.Threads[thread.ID] = thread
+	return e.save(ctx, run, nil)
+}
+
+func (e *Engine) recordTokenCapacity(ctx context.Context, command RecordTokenCapacity) (Outcome, error) {
+	run, err := e.repository.Load(ctx, command.RunID)
+	if err != nil {
+		return Outcome{}, fmt.Errorf("load run: %w", err)
+	}
+	if command.ThreadID == "" {
+		return Outcome{}, errors.New("thread id is required")
+	}
+	snapshot := command.Snapshot
+	if snapshot.TotalTokens < 0 || snapshot.InputTokens < 0 || snapshot.CachedInputTokens < 0 || snapshot.OutputTokens < 0 || snapshot.ReasoningOutputTokens < 0 || snapshot.LastTotalTokens < 0 || snapshot.ModelContextWindow < 0 {
+		return Outcome{}, errors.New("token capacity values cannot be negative")
+	}
+	thread, exists := run.Threads[command.ThreadID]
+	if !exists {
+		return Outcome{}, fmt.Errorf("thread %s is not registered", command.ThreadID)
+	}
+	snapshot.ObservedAt = e.now().UTC()
+	thread.TokenCapacity = &snapshot
 	run.Threads[thread.ID] = thread
 	return e.save(ctx, run, nil)
 }

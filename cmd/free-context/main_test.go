@@ -219,9 +219,11 @@ func TestCLIProcess(t *testing.T) {
 		}
 		os.Args = append([]string{"free-context"}, arguments...)
 		main()
+		os.Exit(0)
 	case "run":
 		os.Args = []string{"free-context", "run"}
 		main()
+		os.Exit(0)
 	default:
 		return
 	}

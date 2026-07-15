@@ -26,6 +26,7 @@ import (
 	"github.com/ChaoYangShi/free-context/internal/orchestrator"
 	"github.com/ChaoYangShi/free-context/internal/paths"
 	"github.com/ChaoYangShi/free-context/internal/store"
+	"github.com/ChaoYangShi/free-context/internal/tui"
 )
 
 const version = "0.1.0"
@@ -54,6 +55,7 @@ var commandDefinitions = []commandDefinition{
 	{name: "list", usage: "free-context list"},
 	{name: "status", usage: "free-context status [run_id]", maximumArguments: 1, runIDs: allRunIDs},
 	{name: "inspect", usage: "free-context inspect [run_id]", maximumArguments: 1, runIDs: allRunIDs},
+	{name: "tui", usage: "free-context tui"},
 	{name: "attach", usage: "free-context attach [run_id]", maximumArguments: 1, runIDs: nonTerminalRunIDs},
 	{name: "stop", usage: "free-context stop [run_id]", maximumArguments: 1, runIDs: nonTerminalRunIDs},
 	{name: "delete", usage: "free-context delete <run_id>", minimumArguments: 1, maximumArguments: 1, runIDs: terminalRunIDs},
@@ -79,6 +81,7 @@ Commands:
   free-context list                        List runs
   free-context status [run_id]             Show a run's status
   free-context inspect [run_id]            Show a run's persisted state
+  free-context tui                         Monitor active runs and token capacity
   free-context attach [run_id]             Attach to an active run
   free-context stop [run_id]               Stop an active run
   free-context delete <run_id>             Delete a completed or stopped run
@@ -105,7 +108,9 @@ complete -F _free_context_complete free-context
 
 func main() {
 	if err := run(context.Background(), os.Args[1:]); err != nil {
-		_ = json.NewEncoder(os.Stderr).Encode(map[string]string{"error": err.Error()})
+		encoder := json.NewEncoder(os.Stderr)
+		encoder.SetEscapeHTML(false)
+		_ = encoder.Encode(map[string]string{"error": err.Error()})
 		os.Exit(1)
 	}
 }
@@ -171,6 +176,16 @@ func run(ctx context.Context, arguments []string) error {
 		}
 		state, err := client.State(ctx, id)
 		return output(state, err)
+	case "tui":
+		client, err := liveClient(ctx, layout)
+		if err != nil {
+			return err
+		}
+		attachRunID, err := tui.Run(ctx, client)
+		if err != nil || attachRunID == "" {
+			return err
+		}
+		return attach(ctx, layout, []string{attachRunID})
 	case "attach":
 		return attach(ctx, layout, arguments[1:])
 	case "stop":
@@ -722,6 +737,7 @@ func output(value any, err error) error {
 	}
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
+	encoder.SetEscapeHTML(false)
 	return encoder.Encode(value)
 }
 
