@@ -15,7 +15,7 @@ import (
 
 type Commander interface {
 	Execute(context.Context, daemon.CommandKind, any) (orchestrator.Outcome, error)
-	Run(context.Context, string) (orchestrator.Run, error)
+	State(context.Context, string) (daemon.RunState, error)
 }
 
 type Server struct {
@@ -159,7 +159,7 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage) (any, err
 		if len(call.Arguments) > 0 && string(call.Arguments) != "{}" && string(call.Arguments) != "null" {
 			return nil, errors.New("get_run_state accepts no arguments")
 		}
-		return s.commander.Run(ctx, s.runID)
+		return s.commander.State(ctx, s.runID)
 	default:
 		return nil, fmt.Errorf("unknown tool %q", call.Name)
 	}

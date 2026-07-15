@@ -45,6 +45,17 @@ func TestStartTurnUsesStructuredReadOnlySandboxPolicy(t *testing.T) {
 	}
 }
 
+func TestSteerTurnIncludesExpectedTurnID(t *testing.T) {
+	transport := &fakeTransport{responses: []json.RawMessage{json.RawMessage(`{"jsonrpc":"2.0","id":1,"result":{}}`)}}
+	client := codexrpc.New(transport, "0.144.4")
+	if err := client.SteerTurn(context.Background(), "thread-1", "turn-1", "continue"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(transport.requests[0], `"expectedTurnId":"turn-1"`) {
+		t.Fatalf("steer request omitted expected turn: %s", transport.requests[0])
+	}
+}
+
 func TestMinimumSupportedVersionIsExact(t *testing.T) {
 	for _, version := range []string{"0.143.9", "0.144.0", "0.144.3"} {
 		client := codexrpc.New(&fakeTransport{}, version)

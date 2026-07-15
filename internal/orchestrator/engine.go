@@ -70,6 +70,8 @@ func (e *Engine) Execute(ctx context.Context, command any) (Outcome, error) {
 		return e.blockRun(ctx, command)
 	case StopRun:
 		return e.stopRun(ctx, command)
+	case ResumeRun:
+		return e.resumeRun(ctx, command)
 	case RegisterAppServer:
 		return e.registerAppServer(ctx, command)
 	case RecoverRun:
@@ -164,10 +166,14 @@ func (e *Engine) recoverRun(ctx context.Context, command RecoverRun) (Outcome, e
 	}
 	now := e.now().UTC()
 	for id, record := range run.Handoffs {
-		record.Status = HandoffResolved
-		record.Resolution = ResolutionReplanned
-		record.ResolvedAt = &now
-		run.Handoffs[id] = record
+		if record.Status != HandoffResolved {
+			record.Status = HandoffReady
+			record.OwnerThreadID = ""
+			record.AcceptedAt = nil
+			record.Resolution = ""
+			record.ResolvedAt = nil
+			run.Handoffs[id] = record
+		}
 	}
 	workerIDs := make([]string, 0)
 	for id, thread := range run.Threads {
@@ -266,6 +272,23 @@ func (e *Engine) stopRun(ctx context.Context, command StopRun) (Outcome, error) 
 	run.Status = RunStopped
 	run.BlockedReason = "stopped by user"
 	return e.save(ctx, run, []Effect{{Kind: EffectStopAppServer}})
+}
+
+func (e *Engine) resumeRun(ctx context.Context, command ResumeRun) (Outcome, error) {
+	run, err := e.repository.Load(ctx, command.RunID)
+	if err != nil {
+		return Outcome{}, fmt.Errorf("load run: %w", err)
+	}
+	if run.Status != RunBlocked {
+		return Outcome{}, errors.New("only a blocked run can be resumed")
+	}
+	root, exists := run.Threads[run.RootThreadID]
+	if !exists || root.Status != ThreadActive {
+		return Outcome{}, errors.New("blocked run has no active root to resume")
+	}
+	run.Status = RunActive
+	run.BlockedReason = ""
+	return e.save(ctx, run, []Effect{{Kind: EffectStartNextTurn, ThreadID: root.ID, Prompt: "The user explicitly reattached this blocked run. Re-evaluate the blocker from current workspace evidence and continue, or report_progress as blocked with the remaining reason."}})
 }
 
 func (e *Engine) beginCompaction(ctx context.Context, command BeginCompaction) (Outcome, error) {
@@ -509,6 +532,9 @@ func (e *Engine) completeRootTransfer(ctx context.Context, command CompleteRootT
 			continue
 		}
 		thread.Status = ThreadRetired
+		if thread.Role == RoleWorker {
+			thread.ParentThreadID = newRootID
+		}
 		thread.TransitionDeadline = time.Time{}
 		run.Threads[id] = thread
 	}

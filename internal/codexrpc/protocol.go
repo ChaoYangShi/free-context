@@ -141,10 +141,14 @@ func (c *Client) StartTurn(ctx context.Context, threadID, prompt, workspace, mod
 	return response.Turn, nil
 }
 
-func (c *Client) SteerTurn(ctx context.Context, threadID, prompt string) error {
+func (c *Client) SteerTurn(ctx context.Context, threadID, turnID, prompt string) error {
+	if threadID == "" || turnID == "" {
+		return errors.New("thread id and expected turn id are required for steering")
+	}
 	return c.call(ctx, "turn/steer", map[string]any{
-		"threadId": threadID,
-		"input":    []map[string]any{{"type": "text", "text": prompt}},
+		"threadId":       threadID,
+		"expectedTurnId": turnID,
+		"input":          []map[string]any{{"type": "text", "text": prompt}},
 	}, nil)
 }
 

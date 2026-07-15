@@ -26,6 +26,10 @@ func (f *fakeCommander) Run(context.Context, string) (orchestrator.Run, error) {
 	return f.run, f.runErr
 }
 
+func (f *fakeCommander) State(context.Context, string) (daemon.RunState, error) {
+	return daemon.RunState{Run: f.run}, f.runErr
+}
+
 func validCompactInput() PreCompactInput {
 	return PreCompactInput{SessionID: "thread-1", TurnID: "turn-1", CWD: "/workspace", HookEventName: "PreCompact", Model: "gpt-5", Trigger: "auto"}
 }
@@ -95,5 +99,18 @@ func TestPreToolUseAllowsActiveRun(t *testing.T) {
 	}
 	if string(response) != "{}" {
 		t.Fatalf("expected empty allow response, got %s", response)
+	}
+}
+
+func TestPreToolUseAllowsLifecycleMCPDuringTransition(t *testing.T) {
+	commander := &fakeCommander{run: orchestrator.Run{Status: orchestrator.RunTransitioning}}
+	input := validToolInput()
+	input.ToolName = "mcp__free_context__accept_handoff"
+	response, err := New(commander, "run-1").PreToolUse(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(response) != "{}" {
+		t.Fatalf("expected lifecycle MCP allow response, got %s", response)
 	}
 }

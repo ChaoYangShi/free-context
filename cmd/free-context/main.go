@@ -55,7 +55,7 @@ func run(ctx context.Context, arguments []string) error {
 		}
 		runs, err := client.List(ctx)
 		return output(runs, err)
-	case "status", "inspect":
+	case "status":
 		client, err := liveClient(ctx, layout)
 		if err != nil {
 			return err
@@ -66,6 +66,17 @@ func run(ctx context.Context, arguments []string) error {
 		}
 		run, err := client.Run(ctx, id)
 		return output(run, err)
+	case "inspect":
+		client, err := liveClient(ctx, layout)
+		if err != nil {
+			return err
+		}
+		id, err := resolveRunID(ctx, client, arguments[1:])
+		if err != nil {
+			return err
+		}
+		state, err := client.State(ctx, id)
+		return output(state, err)
 	case "attach":
 		return attach(ctx, layout, arguments[1:])
 	case "stop":
@@ -198,6 +209,13 @@ func attach(ctx context.Context, layout paths.Layout, arguments []string) error 
 	if run.Status == orchestrator.RunComplete || run.Status == orchestrator.RunStopped {
 		return errors.New("terminal runs cannot be attached")
 	}
+	if run.Status == orchestrator.RunBlocked {
+		outcome, err := client.Execute(ctx, daemon.CommandResumeRun, orchestrator.ResumeRun{RunID: id})
+		if err != nil {
+			return err
+		}
+		run = outcome.Run
+	}
 	command := exec.CommandContext(ctx, codexBinary(), "--remote", "unix://"+appserver.SocketPath(layout.RuntimeRoot, id), "-C", run.WorkspacePath, "-a", "never", "-s", run.Sandbox)
 	command.Stdin = os.Stdin
 	command.Stdout = os.Stdout
@@ -223,12 +241,18 @@ func daemonCommand(ctx context.Context, layout paths.Layout, arguments []string)
 		}
 		return output(map[string]any{"status": status, "socket": layout.DaemonSocket}, nil)
 	case "stop":
+		if err := daemon.NewClient(layout.DaemonSocket).Ping(ctx); err != nil {
+			return errors.New("daemon is not running")
+		}
 		data, err := os.ReadFile(layout.PIDFile)
 		if err != nil {
 			return fmt.Errorf("read daemon pid: %w", err)
 		}
 		pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
 		if err != nil {
+			return err
+		}
+		if err := verifyDaemonProcess(pid); err != nil {
 			return err
 		}
 		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
@@ -258,7 +282,22 @@ func serveDaemon(layout paths.Layout) error {
 	if err := os.MkdirAll(layout.RuntimeRoot, 0o700); err != nil {
 		return err
 	}
-	if err := os.WriteFile(layout.PIDFile, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600); err != nil {
+	pidFile, err := os.OpenFile(layout.PIDFile, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	defer pidFile.Close()
+	if err := syscall.Flock(int(pidFile.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		return errors.New("daemon is already starting or running")
+	}
+	defer syscall.Flock(int(pidFile.Fd()), syscall.LOCK_UN)
+	if err := pidFile.Truncate(0); err != nil {
+		return err
+	}
+	if _, err := pidFile.WriteString(strconv.Itoa(os.Getpid()) + "\n"); err != nil {
+		return err
+	}
+	if err := pidFile.Sync(); err != nil {
 		return err
 	}
 	defer os.Remove(layout.PIDFile)
@@ -275,10 +314,39 @@ func serveDaemon(layout paths.Layout) error {
 		}
 	})
 	controller = daemon.NewController(engine, repository, manager, handoff.Runner{Executor: handoff.CodexExecutor{Binary: codexBinary()}, Now: time.Now, NewID: randomID})
+	manager.OnExit = func(runID string, exitErr error) {
+		controller.HandleAppServerExit(context.Background(), runID, exitErr)
+	}
 	defer manager.StopAll()
-	go func() { _ = daemon.RecoverPersistedRuns(ctx, controller, engine, repository) }()
+	ready := make(chan struct{})
+	go func() {
+		<-ready
+		_ = daemon.RecoverPersistedRuns(ctx, controller, engine, repository)
+	}()
 	go monitorTimeouts(ctx, controller)
-	return daemon.Serve(ctx, layout.DaemonSocket, daemon.NewHandler(controller, repository))
+	return daemon.ServeReady(ctx, layout.DaemonSocket, daemon.NewHandler(controller, repository), ready)
+}
+
+func verifyDaemonProcess(pid int) error {
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	actualExecutable, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
+	if err != nil {
+		return fmt.Errorf("verify daemon process: %w", err)
+	}
+	if filepath.Clean(actualExecutable) != filepath.Clean(executable) {
+		return errors.New("daemon pid does not belong to this executable")
+	}
+	commandLine, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+	if err != nil {
+		return fmt.Errorf("verify daemon command: %w", err)
+	}
+	if !strings.Contains(string(commandLine), "daemon\x00serve") {
+		return errors.New("daemon pid does not belong to a daemon serve process")
+	}
+	return nil
 }
 
 func monitorTimeouts(ctx context.Context, controller *daemon.Controller) {

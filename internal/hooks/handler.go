@@ -46,6 +46,7 @@ type PreToolUseInput struct {
 type Commander interface {
 	Execute(context.Context, daemon.CommandKind, any) (orchestrator.Outcome, error)
 	Run(context.Context, string) (orchestrator.Run, error)
+	State(context.Context, string) (daemon.RunState, error)
 }
 
 type Handler struct {
@@ -95,6 +96,9 @@ func (h *Handler) PreToolUse(ctx context.Context, input PreToolUseInput) ([]byte
 	run, err := h.Commander.Run(ctx, h.RunID)
 	if err != nil {
 		return denyResponse("free-context could not read run state: " + err.Error())
+	}
+	if run.Status == orchestrator.RunTransitioning && strings.HasPrefix(input.ToolName, "mcp__free_context__") {
+		return []byte("{}"), nil
 	}
 	if run.Status == orchestrator.RunTransitioning || run.Status == orchestrator.RunBlocked || run.Status == orchestrator.RunStopped || run.Status == orchestrator.RunComplete {
 		return denyResponse("free-context is quiescing this run")

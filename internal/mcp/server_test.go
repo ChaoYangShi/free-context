@@ -75,6 +75,6 @@ func (f *fakeCommander) Execute(_ context.Context, kind daemon.CommandKind, comm
 	return orchestrator.Outcome{}, nil
 }
 
-func (f *fakeCommander) Run(context.Context, string) (orchestrator.Run, error) {
-	return orchestrator.Run{ID: "run-1", Status: orchestrator.RunActive}, nil
+func (f *fakeCommander) State(context.Context, string) (daemon.RunState, error) {
+	return daemon.RunState{Run: orchestrator.Run{ID: "run-1", Status: orchestrator.RunActive}}, nil
 }

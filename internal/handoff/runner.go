@@ -169,6 +169,9 @@ func validate(expected, actual orchestrator.Handoff) error {
 	if actual.Constraints == nil || actual.Decisions == nil || actual.CompletedWork == nil || actual.InProgressWork == nil || actual.Blockers == nil || actual.ArtifactReferences == nil || actual.SuggestedSkills == nil || actual.ChildHandoffIDs == nil || actual.CompletionCriteria == nil {
 		return errors.New("every handoff array field must be present")
 	}
+	if len(actual.InProgressWork) != 0 && strings.TrimSpace(actual.NextAction) == "" {
+		return errors.New("handoff with in-progress work requires next_action")
+	}
 	encoded, err := json.Marshal(actual)
 	if err != nil {
 		return err

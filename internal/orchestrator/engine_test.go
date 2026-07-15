@@ -285,7 +285,26 @@ func TestRootCompactionTransfersTreeOnlyAfterNewRootAccepts(t *testing.T) {
 	if outcome.Run.Threads["root-1"].Status != ThreadRetired || outcome.Run.Threads["root-2"].Status != ThreadActive {
 		t.Fatalf("root statuses = old:%q new:%q", outcome.Run.Threads["root-1"].Status, outcome.Run.Threads["root-2"].Status)
 	}
+	if outcome.Run.Threads["worker-1"].ParentThreadID != "root-2" {
+		t.Fatalf("worker parent was not transferred: %#v", outcome.Run.Threads["worker-1"])
+	}
 	assertEffectKinds(t, outcome.Effects, EffectGrantSandbox)
+	if _, err = engine.Execute(ctx, ResolveHandoff{RunID: "run-1", ThreadID: "root-2", HandoffID: treeHandoff.ID, Resolution: ResolutionReplanned}); err != nil {
+		t.Fatalf("resolve tree handoff: %v", err)
+	}
+	if _, err = engine.Execute(ctx, AcceptHandoff{RunID: "run-1", ThreadID: "root-2", HandoffID: workerHandoff.ID}); err != nil {
+		t.Fatalf("accept transferred worker handoff: %v", err)
+	}
+	if _, err = engine.Execute(ctx, ResolveHandoff{RunID: "run-1", ThreadID: "root-2", HandoffID: workerHandoff.ID, Resolution: ResolutionReplanned}); err != nil {
+		t.Fatalf("resolve transferred worker handoff: %v", err)
+	}
+	if _, err = engine.Execute(ctx, ReportProgress{RunID: "run-1", ThreadID: "root-2", Status: ProgressCompleted}); err != nil {
+		t.Fatalf("report replacement completion: %v", err)
+	}
+	outcome, err = engine.Execute(ctx, TurnEnded{RunID: "run-1", ThreadID: "root-2"})
+	if err != nil || outcome.Run.Status != RunComplete {
+		t.Fatalf("replacement root could not complete: outcome=%#v err=%v", outcome, err)
+	}
 }
 
 func TestRootTurnEndUsesExplicitProgressAsItsOnlyContinuationSignal(t *testing.T) {

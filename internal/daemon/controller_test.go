@@ -35,8 +35,8 @@ func (f *fakeRuntime) StartTurn(context.Context, string, string, string, string,
 	return f.nextTurn, nil
 }
 
-func (f *fakeRuntime) SteerTurn(_ context.Context, threadID, prompt string) error {
-	f.steers = append(f.steers, threadID+":"+prompt)
+func (f *fakeRuntime) SteerTurn(_ context.Context, threadID, turnID, prompt string) error {
+	f.steers = append(f.steers, threadID+":"+turnID+":"+prompt)
 	return nil
 }
 

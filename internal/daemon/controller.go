@@ -102,6 +102,22 @@ func (c *Controller) CheckTimeouts(ctx context.Context, now time.Time) error {
 	return nil
 }
 
+func (c *Controller) HandleAppServerExit(ctx context.Context, runID string, exitErr error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	run, err := c.Repository.Load(ctx, runID)
+	if err != nil || run.Status == orchestrator.RunComplete || run.Status == orchestrator.RunStopped || run.Status == orchestrator.RunBlocked {
+		return
+	}
+	reason := "managed app-server exited unexpectedly"
+	if exitErr != nil {
+		reason += ": " + exitErr.Error()
+	}
+	if outcome, err := c.Engine.Execute(ctx, orchestrator.BlockRun{RunID: runID, Reason: reason}); err == nil {
+		_ = c.apply(ctx, outcome)
+	}
+}
+
 func (c *Controller) Execute(ctx context.Context, command any) (orchestrator.Outcome, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -203,7 +219,8 @@ func (c *Controller) applyEffect(ctx context.Context, runID string, effect orche
 		if err != nil {
 			return err
 		}
-		return session.SteerTurn(ctx, effect.ThreadID, fmt.Sprintf("Free Context handoff %s is ready. Read it with get_run_state, call accept_handoff with handoff_id=%s, then call resolve_handoff after deciding whether to continue, replan, or complete.", effect.HandoffID, effect.HandoffID))
+		parent := run.Threads[effect.ThreadID]
+		return session.SteerTurn(ctx, effect.ThreadID, parent.CurrentTurnID, fmt.Sprintf("Free Context handoff %s is ready. Read it with get_run_state, call accept_handoff with handoff_id=%s, then call resolve_handoff after deciding whether to continue, replan, or complete.", effect.HandoffID, effect.HandoffID))
 	case orchestrator.EffectQuiesceTree:
 		for _, thread := range run.Threads {
 			if len(thread.InFlightToolIDs) != 0 {
@@ -359,7 +376,7 @@ func (c *Controller) HandleNotification(runID string, message json.RawMessage) {
 			return
 		}
 		model := params.Thread.Model
-		if root, exists := run.Threads[run.RootThreadID]; exists {
+		if root, exists := run.Threads[run.RootThreadID]; model == "" && exists {
 			model = root.Model
 		}
 		role := orchestrator.RoleWorker

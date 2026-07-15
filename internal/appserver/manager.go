@@ -24,7 +24,7 @@ type Runtime interface {
 	StartThread(context.Context, codexrpc.StartThreadInput) (codexrpc.Thread, error)
 	ResumeThread(context.Context, string) (codexrpc.Thread, error)
 	StartTurn(context.Context, string, string, string, string, bool) (codexrpc.Turn, error)
-	SteerTurn(context.Context, string, string) error
+	SteerTurn(context.Context, string, string, string) error
 	Interrupt(context.Context, string, string) error
 	UpdateThreadSettings(context.Context, string, string, string) error
 	ArchiveThread(context.Context, string) error
@@ -87,8 +87,8 @@ func (s *Session) StartTurn(ctx context.Context, threadID, prompt, workspace, mo
 	return s.Client.StartTurn(ctx, threadID, prompt, workspace, model, readOnly)
 }
 
-func (s *Session) SteerTurn(ctx context.Context, threadID, prompt string) error {
-	return s.Client.SteerTurn(ctx, threadID, prompt)
+func (s *Session) SteerTurn(ctx context.Context, threadID, turnID, prompt string) error {
+	return s.Client.SteerTurn(ctx, threadID, turnID, prompt)
 }
 
 func (s *Session) Interrupt(ctx context.Context, threadID, turnID string) error {
@@ -110,6 +110,7 @@ type Manager struct {
 	RuntimeRoot  string
 	HookCommand  string
 	OnNotify     NotificationHandler
+	OnExit       func(string, error)
 
 	mu       sync.Mutex
 	sessions map[string]*Session
@@ -139,7 +140,7 @@ func (m *Manager) Start(ctx context.Context, run orchestrator.Run) (Runtime, err
 	}
 	_ = os.Remove(socket)
 	env := []string{"FREE_CONTEXT_RUN_ID=" + run.ID, "FREE_CONTEXT_DAEMON_SOCKET=" + m.DaemonSocket}
-	serverArgs := []string{"app-server", "--listen", "unix://" + socket, "--enable", "codex_hooks"}
+	serverArgs := []string{"--dangerously-bypass-hook-trust", "app-server", "--listen", "unix://" + socket, "--enable", "codex_hooks"}
 	serverArgs = append(serverArgs, hookConfigArgs(m.HookCommand)...)
 	serverArgs = append(serverArgs, "-c", "developer_instructions="+strconv.Quote(managedInstructions))
 	binary := m.Binary
@@ -177,7 +178,18 @@ func (m *Manager) Start(ctx context.Context, run orchestrator.Run) (Runtime, err
 	m.mu.Lock()
 	m.sessions[run.ID] = session
 	m.mu.Unlock()
+	go m.observeExit(run.ID, session)
 	return session, nil
+}
+
+func (m *Manager) observeExit(runID string, session *Session) {
+	err := <-session.done
+	m.mu.Lock()
+	owned := m.sessions[runID] == session
+	m.mu.Unlock()
+	if owned && m.OnExit != nil {
+		m.OnExit(runID, err)
+	}
 }
 
 func (m *Manager) Get(runID string) (Runtime, error) {

@@ -74,6 +74,13 @@ func stopOwnedAppServer(ctx context.Context, run orchestrator.Run) error {
 		if err := syscall.Kill(-run.AppServerPID, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
 			return fmt.Errorf("kill prior app-server: %w", err)
 		}
+		killDeadline := time.Now().Add(time.Second)
+		for time.Now().Before(killDeadline) {
+			if _, err := os.Stat(processPath); errors.Is(err, os.ErrNotExist) {
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
 	if socketAccepting(run.AppServerSocket) {
 		return errors.New("prior app-server socket remained active after its process group was stopped")

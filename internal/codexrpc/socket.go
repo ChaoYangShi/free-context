@@ -21,7 +21,6 @@ type SocketTransport struct {
 	pending       map[string]chan callResult
 	done          chan struct{}
 	closeOnce     sync.Once
-	readErr       error
 }
 
 func DialUnix(ctx context.Context, socketPath, version string, notification NotificationHandler) (*SocketTransport, *Client, error) {
@@ -83,7 +82,7 @@ func (t *SocketTransport) Call(ctx context.Context, request []byte) ([]byte, err
 		return response.message, response.err
 	case <-t.done:
 		t.removePending(key)
-		return nil, fmt.Errorf("app-server websocket closed: %w", t.readErr)
+		return nil, errors.New("app-server websocket closed")
 	}
 }
 
@@ -101,7 +100,6 @@ func (t *SocketTransport) readLoop() {
 	for {
 		messageType, message, err := t.connection.ReadMessage()
 		if err != nil {
-			t.readErr = err
 			_ = t.Close()
 			return
 		}

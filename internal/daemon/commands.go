@@ -24,6 +24,7 @@ const (
 	CommandBlockRun                CommandKind = "block_run"
 	CommandThreadTurnStarted       CommandKind = "thread_turn_started"
 	CommandStopRun                 CommandKind = "stop_run"
+	CommandResumeRun               CommandKind = "resume_run"
 	CommandUpdateThreadMetadata    CommandKind = "update_thread_metadata"
 	CommandRegisterAppServer       CommandKind = "register_app_server"
 	CommandRecoverRun              CommandKind = "recover_run"
@@ -67,6 +68,8 @@ func decodeCommand(envelope commandEnvelope) (any, error) {
 		target = &orchestrator.ThreadTurnStarted{}
 	case CommandStopRun:
 		target = &orchestrator.StopRun{}
+	case CommandResumeRun:
+		target = &orchestrator.ResumeRun{}
 	case CommandUpdateThreadMetadata:
 		target = &orchestrator.UpdateThreadMetadata{}
 	case CommandRegisterAppServer:
@@ -111,6 +114,8 @@ func decodeCommand(envelope commandEnvelope) (any, error) {
 	case *orchestrator.ThreadTurnStarted:
 		return *command, nil
 	case *orchestrator.StopRun:
+		return *command, nil
+	case *orchestrator.ResumeRun:
 		return *command, nil
 	case *orchestrator.UpdateThreadMetadata:
 		return *command, nil

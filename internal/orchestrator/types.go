@@ -301,6 +301,10 @@ type StopRun struct {
 	RunID string
 }
 
+type ResumeRun struct {
+	RunID string
+}
+
 type RegisterAppServer struct {
 	RunID  string
 	PID    int

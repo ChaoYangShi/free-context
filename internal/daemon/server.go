@@ -17,6 +17,10 @@ import (
 )
 
 func Serve(ctx context.Context, socket string, handler http.Handler) error {
+	return ServeReady(ctx, socket, handler, nil)
+}
+
+func ServeReady(ctx context.Context, socket string, handler http.Handler, ready chan<- struct{}) error {
 	if err := os.MkdirAll(filepath.Dir(socket), 0o700); err != nil {
 		return fmt.Errorf("create socket directory: %w", err)
 	}
@@ -32,6 +36,9 @@ func Serve(ctx context.Context, socket string, handler http.Handler) error {
 		os.Remove(socket)
 		return fmt.Errorf("secure daemon socket: %w", err)
 	}
+	if ready != nil {
+		close(ready)
+	}
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -41,7 +48,7 @@ func Serve(ctx context.Context, socket string, handler http.Handler) error {
 	_ = listener.Close()
 	_ = os.Remove(socket)
 	if errors.Is(err, http.ErrServerClosed) {
-		return ctx.Err()
+		return nil
 	}
 	return err
 }
@@ -121,6 +128,14 @@ func (c *Client) Run(ctx context.Context, id string) (orchestrator.Run, error) {
 		return orchestrator.Run{}, err
 	}
 	return run, nil
+}
+
+func (c *Client) State(ctx context.Context, id string) (RunState, error) {
+	var state RunState
+	if err := c.request(ctx, http.MethodGet, "/v1/states/"+id, nil, http.StatusOK, &state); err != nil {
+		return RunState{}, err
+	}
+	return state, nil
 }
 
 func (c *Client) List(ctx context.Context) ([]orchestrator.Run, error) {

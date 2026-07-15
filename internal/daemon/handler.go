@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/ChaoYangShi/free-context/internal/orchestrator"
@@ -18,6 +19,15 @@ type Handler struct {
 
 type Executor interface {
 	Execute(context.Context, any) (orchestrator.Outcome, error)
+}
+
+type HandoffLoader interface {
+	LoadHandoff(context.Context, string, string) (orchestrator.Handoff, error)
+}
+
+type RunState struct {
+	Run      orchestrator.Run       `json:"run"`
+	Handoffs []orchestrator.Handoff `json:"handoffs"`
 }
 
 func NewHandler(executor Executor, repository orchestrator.Repository) http.Handler {
@@ -44,11 +54,47 @@ func (h *Handler) ServeHTTP(response http.ResponseWriter, request *http.Request)
 		h.runs(response, request)
 		return
 	}
+	if strings.HasPrefix(request.URL.Path, "/v1/states/") {
+		h.state(response, request, strings.TrimPrefix(request.URL.Path, "/v1/states/"))
+		return
+	}
 	if strings.HasPrefix(request.URL.Path, "/v1/runs/") {
 		h.run(response, request, strings.TrimPrefix(request.URL.Path, "/v1/runs/"))
 		return
 	}
 	writeError(response, http.StatusNotFound, "route not found")
+}
+
+func (h *Handler) state(response http.ResponseWriter, request *http.Request, id string) {
+	if request.Method != http.MethodGet || id == "" || strings.Contains(id, "/") {
+		writeError(response, http.StatusNotFound, "state not found")
+		return
+	}
+	run, err := h.repository.Load(request.Context(), id)
+	if err != nil {
+		writeDomainError(response, err)
+		return
+	}
+	loader, ok := h.repository.(HandoffLoader)
+	if !ok {
+		writeError(response, http.StatusInternalServerError, "handoff repository is unavailable")
+		return
+	}
+	ids := make([]string, 0, len(run.Handoffs))
+	for handoffID := range run.Handoffs {
+		ids = append(ids, handoffID)
+	}
+	sort.Strings(ids)
+	handoffs := make([]orchestrator.Handoff, 0, len(ids))
+	for _, handoffID := range ids {
+		handoff, err := loader.LoadHandoff(request.Context(), id, handoffID)
+		if err != nil {
+			writeDomainError(response, err)
+			return
+		}
+		handoffs = append(handoffs, handoff)
+	}
+	writeJSON(response, http.StatusOK, RunState{Run: run, Handoffs: handoffs})
 }
 
 func (h *Handler) command(response http.ResponseWriter, request *http.Request) {

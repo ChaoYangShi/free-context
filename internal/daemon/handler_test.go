@@ -65,6 +65,24 @@ func TestHandlerCreatesListsAndReadsRun(t *testing.T) {
 	if loaded.Objective != "migrate" {
 		t.Fatalf("loaded = %#v", loaded)
 	}
+	handoff := orchestrator.Handoff{ID: "handoff-1", RunID: "run-1", Objective: "migrate"}
+	if err := repository.SaveHandoff(t.Context(), handoff); err != nil {
+		t.Fatal(err)
+	}
+	loaded.Handoffs[handoff.ID] = orchestrator.HandoffRecord{ID: handoff.ID, Status: orchestrator.HandoffReady}
+	loaded.Revision++
+	if err := repository.Save(t.Context(), loaded); err != nil {
+		t.Fatal(err)
+	}
+	stateResponse := httptest.NewRecorder()
+	handler.ServeHTTP(stateResponse, httptest.NewRequest(http.MethodGet, "/v1/states/run-1", nil))
+	var state daemon.RunState
+	if err := json.Unmarshal(stateResponse.Body.Bytes(), &state); err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Handoffs) != 1 || state.Handoffs[0].ID != handoff.ID {
+		t.Fatalf("state omitted immutable handoff: %#v", state)
+	}
 
 	remove := httptest.NewRecorder()
 	handler.ServeHTTP(remove, httptest.NewRequest(http.MethodDelete, "/v1/runs/run-1", nil))
