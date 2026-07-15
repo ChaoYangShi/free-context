@@ -12,30 +12,49 @@ Requirements:
 - Go 1.26 or newer
 - An authenticated `codex` CLI, version `0.144.4` or newer
 
+Clone the repository and install the executable into `/usr/local/bin`:
+
 ```bash
-go install ./cmd/free-context
+git clone https://github.com/ChaoYangShi/free-context.git
+cd free-context
+sudo env GOBIN=/usr/local/bin "$(command -v go)" install ./cmd/free-context
 ```
 
-## Run
+`/usr/local/bin` is the system location for locally installed executables, so every terminal can call `free-context` regardless of its shell or current directory. Verify the installation:
+
+```bash
+command -v free-context
+free-context --help
+```
+
+## Terminal usage
 
 Start a managed session from the workspace it should supervise:
 
 ```bash
+cd /path/to/your/workspace
 free-context run
 ```
 
 The command asks for the objective and completion criteria, starts the user daemon when needed, then opens Codex against the run's Unix app-server endpoint. Runtime hooks and the `free_context` MCP server are injected only into that app-server process; user Codex configuration is not modified.
 
-Operational commands:
+Show the built-in command reference at any time:
+
+```bash
+free-context --help
+```
+
+Operational commands can be called from any terminal:
 
 ```text
 free-context list
 free-context status [run_id]
 free-context attach [run_id]
 free-context stop [run_id]
-free-context inspect <run_id>
+free-context inspect [run_id]
 free-context delete <run_id>
 free-context daemon start|stop|status
+free-context --version
 ```
 
 Run state and immutable handoffs are stored under `$XDG_STATE_HOME/free-context`. Runtime sockets are stored under `$XDG_RUNTIME_DIR/free-context` when it is set.

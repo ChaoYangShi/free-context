@@ -30,6 +30,26 @@ import (
 
 const version = "0.1.0"
 
+const helpText = `Free Context supervises long-running Codex agent trees.
+
+Usage:
+  free-context <command> [arguments]
+  free-context --help
+
+Commands:
+  free-context run                         Start a managed Codex session
+  free-context list                        List runs
+  free-context status [run_id]             Show a run's status
+  free-context inspect [run_id]            Show a run's persisted state
+  free-context attach [run_id]             Attach to an active run
+  free-context stop [run_id]               Stop an active run
+  free-context delete <run_id>             Delete a completed or stopped run
+  free-context daemon start|stop|status     Manage the user daemon
+  free-context mcp                         Start the MCP server
+  free-context hook <hook_name>            Serve a Codex command hook
+  free-context --version                   Show the version
+`
+
 func main() {
 	if err := run(context.Background(), os.Args[1:]); err != nil {
 		_ = json.NewEncoder(os.Stderr).Encode(map[string]string{"error": err.Error()})
@@ -40,6 +60,10 @@ func main() {
 func run(ctx context.Context, arguments []string) error {
 	if len(arguments) == 0 {
 		return errors.New("command is required")
+	}
+	if arguments[0] == "--help" {
+		_, err := fmt.Fprint(os.Stdout, helpText)
+		return err
 	}
 	layout, err := paths.Resolve()
 	if err != nil {
