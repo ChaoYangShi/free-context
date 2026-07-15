@@ -1,0 +1,5 @@
+/free-context
+/dist/
+*.test
+*.out
+
