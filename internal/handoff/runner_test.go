@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ChaoYangShi/free-context/internal/codexconfig"
 	"github.com/ChaoYangShi/free-context/internal/orchestrator"
 )
 
@@ -46,7 +47,7 @@ func TestGenerateProducesValidatedHandoff(t *testing.T) {
 	now := time.Date(2026, 7, 14, 8, 0, 0, 0, time.UTC)
 	runner := Runner{Executor: fakeExecutor{}, Now: func() time.Time { return now }, NewID: func() string { return "handoff-1" }}
 	handoff, err := runner.Generate(context.Background(), GenerateInput{
-		Run:    orchestrator.Run{ID: "run-1", WorkspacePath: workspace, Objective: "finish", CompletionCriteria: []string{"tests pass"}, Sandbox: "workspace-write"},
+		Run:    orchestrator.Run{ID: "run-1", WorkspacePath: workspace, Objective: "finish", CompletionCriteria: []string{"tests pass"}, Sandbox: codexconfig.DangerFullAccessSandbox},
 		Thread: orchestrator.Thread{ID: "worker-1", ParentThreadID: "root-1", AssignedTask: "implement", Model: "gpt-5", TranscriptPath: transcript, CurrentTurnID: "turn-1"},
 		Scope:  orchestrator.HandoffAgent,
 	})
@@ -58,6 +59,45 @@ func TestGenerateProducesValidatedHandoff(t *testing.T) {
 	}
 }
 
+func TestCodexExecArgsUseCurrentApprovalConfig(t *testing.T) {
+	args := codexExecArgs(ExecRequest{
+		WorkspacePath: "/workspace",
+		Model:         "gpt-test",
+		SchemaPath:    "/tmp/schema.json",
+		OutputPath:    "/tmp/output.json",
+		Prompt:        "summarize",
+	})
+	joined := strings.Join(args, " ")
+	if strings.Contains(joined, "--ask-for-approval") {
+		t.Fatalf("deprecated approval flag present in %q", joined)
+	}
+	if !strings.Contains(joined, `approval_policy="never"`) {
+		t.Fatalf("approval policy override missing from %q", joined)
+	}
+	if !strings.Contains(joined, codexconfig.DangerouslyBypassApprovalsAndSandboxFlag) {
+		t.Fatalf("dangerous sandbox bypass flag missing from %q", joined)
+	}
+	if strings.Contains(joined, "--sandbox") {
+		t.Fatalf("sandbox flag should be replaced by bypass flag in %q", joined)
+	}
+	if strings.Contains(joined, "--ignore-user-config") {
+		t.Fatalf("handoff agent discarded provider and authentication config in %q", joined)
+	}
+	if !strings.Contains(joined, `model_reasoning_effort="low"`) {
+		t.Fatalf("low reasoning effort missing from %q", joined)
+	}
+}
+
+func TestPromptLimitsWorkspaceInspectionToReferencedArtifacts(t *testing.T) {
+	prompt := prompt(orchestrator.Handoff{WorkspacePath: "/workspace"}, "/sessions/root.jsonl")
+	if !strings.Contains(prompt, "Do not perform broad workspace exploration") {
+		t.Fatalf("handoff prompt permits broad workspace exploration: %s", prompt)
+	}
+	if !strings.Contains(prompt, "artifact paths referenced by the transcript") {
+		t.Fatalf("handoff prompt does not identify its workspace boundary: %s", prompt)
+	}
+}
+
 func TestGenerateRejectsChangedIdentity(t *testing.T) {
 	workspace := t.TempDir()
 	transcript := filepath.Join(workspace, "transcript.jsonl")
@@ -66,7 +106,7 @@ func TestGenerateRejectsChangedIdentity(t *testing.T) {
 	}
 	runner := Runner{Executor: fakeExecutor{mutate: func(value *orchestrator.Handoff) { value.RunID = "other" }}, NewID: func() string { return "handoff-1" }}
 	_, err := runner.Generate(context.Background(), GenerateInput{
-		Run:    orchestrator.Run{ID: "run-1", WorkspacePath: workspace, Objective: "finish", CompletionCriteria: []string{}, Sandbox: "read-only"},
+		Run:    orchestrator.Run{ID: "run-1", WorkspacePath: workspace, Objective: "finish", CompletionCriteria: []string{}, Sandbox: codexconfig.DangerFullAccessSandbox},
 		Thread: orchestrator.Thread{ID: "root-1", AssignedTask: "finish", Model: "gpt-5", TranscriptPath: transcript, CurrentTurnID: "turn-1"},
 		Scope:  orchestrator.HandoffTree,
 	})
@@ -83,7 +123,7 @@ func TestGenerateRejectsSecrets(t *testing.T) {
 	}
 	runner := Runner{Executor: fakeExecutor{mutate: func(value *orchestrator.Handoff) { value.NextAction = "use sk-1234567890abcdef" }}, NewID: func() string { return "handoff-1" }}
 	_, err := runner.Generate(context.Background(), GenerateInput{
-		Run:    orchestrator.Run{ID: "run-1", WorkspacePath: workspace, Objective: "finish", CompletionCriteria: []string{}, Sandbox: "read-only"},
+		Run:    orchestrator.Run{ID: "run-1", WorkspacePath: workspace, Objective: "finish", CompletionCriteria: []string{}, Sandbox: codexconfig.DangerFullAccessSandbox},
 		Thread: orchestrator.Thread{ID: "root-1", AssignedTask: "finish", Model: "gpt-5", TranscriptPath: transcript, CurrentTurnID: "turn-1"},
 		Scope:  orchestrator.HandoffTree,
 	})

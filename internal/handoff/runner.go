@@ -14,13 +14,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ChaoYangShi/free-context/internal/codexconfig"
 	"github.com/ChaoYangShi/free-context/internal/orchestrator"
 )
 
 type ExecRequest struct {
 	WorkspacePath string
 	Model         string
-	Sandbox       string
 	SchemaPath    string
 	OutputPath    string
 	Prompt        string
@@ -39,24 +39,29 @@ func (e CodexExecutor) Run(ctx context.Context, request ExecRequest) error {
 	if binary == "" {
 		binary = "codex"
 	}
-	command := exec.CommandContext(ctx, binary,
-		"exec",
-		"--ephemeral",
-		"--skip-git-repo-check",
-		"--color", "never",
-		"--model", request.Model,
-		"--sandbox", request.Sandbox,
-		"--ask-for-approval", "never",
-		"--cd", request.WorkspacePath,
-		"--output-schema", request.SchemaPath,
-		"--output-last-message", request.OutputPath,
-		request.Prompt,
-	)
+	command := exec.CommandContext(ctx, binary, codexExecArgs(request)...)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("handoff agent failed: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+func codexExecArgs(request ExecRequest) []string {
+	return []string{
+		"exec",
+		"--ephemeral",
+		"--skip-git-repo-check",
+		"--color", "never",
+		"-c", `approval_policy="` + codexconfig.ApprovalPolicyNever + `"`,
+		"-c", `model_reasoning_effort="low"`,
+		"--model", request.Model,
+		codexconfig.DangerouslyBypassApprovalsAndSandboxFlag,
+		"--cd", request.WorkspacePath,
+		"--output-schema", request.SchemaPath,
+		"--output-last-message", request.OutputPath,
+		request.Prompt,
+	}
 }
 
 type Runner struct {
@@ -128,7 +133,6 @@ func (r Runner) Generate(ctx context.Context, input GenerateInput) (orchestrator
 	request := ExecRequest{
 		WorkspacePath: input.Run.WorkspacePath,
 		Model:         input.Thread.Model,
-		Sandbox:       input.Run.Sandbox,
 		SchemaPath:    schemaPath,
 		OutputPath:    outputPath,
 		Prompt:        prompt(expected, input.Thread.TranscriptPath),
@@ -154,7 +158,7 @@ func (r Runner) Generate(ctx context.Context, input GenerateInput) (orchestrator
 
 func prompt(expected orchestrator.Handoff, transcriptPath string) string {
 	identity, _ := json.Marshal(expected)
-	return fmt.Sprintf(`You are the dedicated Free Context handoff agent. Read the source transcript at %q and inspect the workspace at %q. Produce only one JSON object matching the supplied output schema. Preserve every identity, scope, model, objective, completion criterion, and child_handoff_ids value from this template exactly: %s
+	return fmt.Sprintf(`You are the dedicated Free Context handoff agent. Read the source transcript at %q. Inspect only artifact paths referenced by the transcript when needed to confirm current execution state. Do not perform broad workspace exploration, read skill files, or inspect unrelated project documentation. The replacement agent will perform full workspace verification at %q. Produce only one JSON object matching the supplied output schema. Preserve every identity, scope, model, objective, completion criterion, and child_handoff_ids value from this template exactly: %s
 
 Summarize only confirmed decisions and execution state. Workspace files and command results are authoritative for execution state. Reference artifacts by path; do not copy their contents. Redact credentials, tokens, cookies, private keys, and environment secrets. Every array field is required and may be empty. next_action must be concrete when work remains.`, transcriptPath, expected.WorkspacePath, identity)
 }
