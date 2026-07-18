@@ -193,6 +193,9 @@ func (m *Manager) observeExit(runID string, session *Session) {
 	<-session.exit.done
 	m.mu.Lock()
 	owned := m.sessions[runID] == session
+	if owned {
+		delete(m.sessions, runID)
+	}
 	m.mu.Unlock()
 	if owned && m.OnExit != nil {
 		m.OnExit(runID, session.exit.err)

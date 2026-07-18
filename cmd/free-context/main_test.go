@@ -135,6 +135,12 @@ func TestCLIPointsToUsageWhenRequiredArgumentIsMissing(t *testing.T) {
 	}
 }
 
+func TestSameExecutablePathAcceptsDeletedProcSymlink(t *testing.T) {
+	if !sameExecutablePath("/home/kent/go/bin/free-context (deleted)", "/home/kent/go/bin/free-context") {
+		t.Fatal("deleted proc executable symlink should match its replacement path")
+	}
+}
+
 func TestCLICompletesRunIDsAllowedByCommand(t *testing.T) {
 	stateBase := t.TempDir()
 	runtimeBase := t.TempDir()

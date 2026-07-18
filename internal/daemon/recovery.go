@@ -32,20 +32,77 @@ func RecoverPersistedRuns(ctx context.Context, controller *Controller, engine *o
 			}
 			continue
 		}
-		if run.Status != orchestrator.RunStarting && run.Status != orchestrator.RunActive && run.Status != orchestrator.RunTransitioning {
+		if !runRecoverableOnDaemonStart(run) {
 			continue
 		}
 		if run.RootThreadID == "" {
 			_, _ = engine.Execute(ctx, orchestrator.BlockRun{RunID: run.ID, Reason: "daemon restarted before a root thread was registered"})
 			continue
 		}
-		if err := stopOwnedAppServer(ctx, run); err != nil {
-			_, _ = engine.Execute(ctx, orchestrator.BlockRun{RunID: run.ID, Reason: "automatic recovery blocked: " + err.Error()})
-			continue
-		}
 		_ = controller.Recover(ctx, run.ID)
 	}
 	return completedCleanupError
+}
+
+func runRecoverableOnDaemonStart(run orchestrator.Run) bool {
+	if run.Status == orchestrator.RunStarting || run.Status == orchestrator.RunActive || run.Status == orchestrator.RunTransitioning {
+		return true
+	}
+	if run.Status != orchestrator.RunBlocked {
+		return false
+	}
+	return strings.HasPrefix(run.BlockedReason, "automatic recovery failed:") ||
+		strings.HasPrefix(run.BlockedReason, "automatic recovery blocked:")
+}
+
+func refreshRecoverableThreadMetadata(ctx context.Context, engine *orchestrator.Engine, repository orchestrator.Repository, run orchestrator.Run) error {
+	for _, thread := range run.Threads {
+		if invalidTokenCapacity(thread.TokenCapacity) {
+			if _, err := engine.Execute(ctx, orchestrator.ClearTokenCapacity{
+				RunID:    run.ID,
+				ThreadID: thread.ID,
+			}); err != nil {
+				return err
+			}
+		}
+		if strings.TrimSpace(thread.CurrentTurnID) == "" {
+			turnID, ok, err := latestTranscriptTurnID(thread.TranscriptPath)
+			if err != nil {
+				return err
+			}
+			if ok {
+				if _, err := engine.Execute(ctx, orchestrator.ThreadTurnStarted{
+					RunID:    run.ID,
+					ThreadID: thread.ID,
+					TurnID:   turnID,
+				}); err != nil {
+					return err
+				}
+			}
+		}
+		if strings.TrimSpace(thread.Model) != "" {
+			continue
+		}
+		model, ok, err := latestTranscriptModel(thread.TranscriptPath)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+		if _, err := engine.Execute(ctx, orchestrator.UpdateThreadMetadata{
+			RunID:    run.ID,
+			ThreadID: thread.ID,
+			Model:    model,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func invalidTokenCapacity(snapshot *orchestrator.TokenCapacitySnapshot) bool {
+	return snapshot != nil && snapshot.ModelContextWindow > 0 && snapshot.TotalTokens > snapshot.ModelContextWindow
 }
 
 func stopOwnedAppServer(ctx context.Context, run orchestrator.Run) error {

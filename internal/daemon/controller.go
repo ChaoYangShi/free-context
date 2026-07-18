@@ -41,11 +41,28 @@ func NewController(engine *orchestrator.Engine, repository orchestrator.Reposito
 func (c *Controller) Recover(ctx context.Context, runID string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.recover(ctx, runID)
+}
+
+func (c *Controller) recover(ctx context.Context, runID string) error {
 	run, err := c.Repository.Load(ctx, runID)
-	if err != nil {
-		return err
+	if err == nil {
+		err = refreshRecoverableThreadMetadata(ctx, c.Engine, c.Repository, run)
 	}
-	runtime, err := c.AppServers.Start(ctx, run)
+	if err == nil {
+		run, err = c.Repository.Load(ctx, runID)
+	}
+	if err == nil {
+		err = stopOwnedAppServer(ctx, run)
+	}
+	var runtime appserver.Runtime
+	if err == nil {
+		if c.AppServers == nil {
+			err = errors.New("app-server manager is required")
+		} else {
+			runtime, err = c.AppServers.Start(ctx, run)
+		}
+	}
 	if err == nil {
 		_, err = c.Engine.Execute(ctx, orchestrator.RegisterAppServer{RunID: runID, PID: runtime.PID(), Socket: strings.TrimPrefix(runtime.Endpoint(), "unix://")})
 	}
@@ -59,7 +76,9 @@ func (c *Controller) Recover(ctx context.Context, runID string) error {
 	if err == nil {
 		return nil
 	}
-	_ = c.AppServers.Stop(runID)
+	if c.AppServers != nil {
+		_ = c.AppServers.Stop(runID)
+	}
 	_, _ = c.Engine.Execute(ctx, orchestrator.BlockRun{RunID: runID, Reason: "automatic recovery failed: " + err.Error()})
 	return err
 }
@@ -121,6 +140,28 @@ func (c *Controller) HandleAppServerExit(ctx context.Context, runID string, exit
 func (c *Controller) Execute(ctx context.Context, command any) (orchestrator.Outcome, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if resume, ok := command.(orchestrator.ResumeRun); ok {
+		run, err := c.Repository.Load(ctx, resume.RunID)
+		if err != nil {
+			return orchestrator.Outcome{}, err
+		}
+		root, hasRoot := run.Threads[run.RootThreadID]
+		if run.Status == orchestrator.RunBlocked && hasRoot && root.Status == orchestrator.ThreadActive {
+			if c.AppServers == nil {
+				return orchestrator.Outcome{}, errors.New("app-server manager is required")
+			}
+			if _, err := c.AppServers.Get(run.ID); err != nil {
+				if err := c.recover(ctx, run.ID); err != nil {
+					return orchestrator.Outcome{}, err
+				}
+				current, err := c.Repository.Load(ctx, run.ID)
+				if err != nil {
+					return orchestrator.Outcome{}, err
+				}
+				return orchestrator.Outcome{Run: current}, nil
+			}
+		}
+	}
 	outcome, err := c.Engine.Execute(ctx, command)
 	if err != nil {
 		return orchestrator.Outcome{}, err

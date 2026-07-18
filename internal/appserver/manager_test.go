@@ -77,6 +77,9 @@ func TestSessionCloseReturnsAfterExitObserverRuns(t *testing.T) {
 	}
 	go manager.observeExit("run-1", session)
 	<-observed
+	if _, err := manager.Get("run-1"); err == nil {
+		t.Fatal("exited app-server remained active in manager")
+	}
 
 	closed := make(chan error, 1)
 	go func() { closed <- session.Close() }()

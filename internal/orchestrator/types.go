@@ -316,6 +316,11 @@ type RecordTokenCapacity struct {
 	Snapshot TokenCapacitySnapshot
 }
 
+type ClearTokenCapacity struct {
+	RunID    string
+	ThreadID string
+}
+
 type BlockRun struct {
 	RunID  string
 	Reason string

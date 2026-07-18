@@ -28,6 +28,7 @@ const (
 	CommandResumeRun               CommandKind = "resume_run"
 	CommandUpdateThreadMetadata    CommandKind = "update_thread_metadata"
 	CommandRecordTokenCapacity     CommandKind = "record_token_capacity"
+	CommandClearTokenCapacity      CommandKind = "clear_token_capacity"
 	CommandRegisterAppServer       CommandKind = "register_app_server"
 	CommandRecoverRun              CommandKind = "recover_run"
 	CommandToolStarted             CommandKind = "tool_started"
@@ -78,6 +79,8 @@ func decodeCommand(envelope commandEnvelope) (any, error) {
 		target = &orchestrator.UpdateThreadMetadata{}
 	case CommandRecordTokenCapacity:
 		target = &orchestrator.RecordTokenCapacity{}
+	case CommandClearTokenCapacity:
+		target = &orchestrator.ClearTokenCapacity{}
 	case CommandRegisterAppServer:
 		target = &orchestrator.RegisterAppServer{}
 	case CommandRecoverRun:
@@ -128,6 +131,8 @@ func decodeCommand(envelope commandEnvelope) (any, error) {
 	case *orchestrator.UpdateThreadMetadata:
 		return *command, nil
 	case *orchestrator.RecordTokenCapacity:
+		return *command, nil
+	case *orchestrator.ClearTokenCapacity:
 		return *command, nil
 	case *orchestrator.RegisterAppServer:
 		return *command, nil

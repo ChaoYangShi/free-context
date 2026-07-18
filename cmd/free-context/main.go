@@ -633,7 +633,7 @@ func verifyDaemonProcess(pid int) error {
 	if err != nil {
 		return fmt.Errorf("verify daemon process: %w", err)
 	}
-	if filepath.Clean(actualExecutable) != filepath.Clean(executable) {
+	if !sameExecutablePath(actualExecutable, executable) {
 		return errors.New("daemon pid does not belong to this executable")
 	}
 	commandLine, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
@@ -644,6 +644,11 @@ func verifyDaemonProcess(pid int) error {
 		return errors.New("daemon pid does not belong to a daemon serve process")
 	}
 	return nil
+}
+
+func sameExecutablePath(actual, expected string) bool {
+	actual = strings.TrimSuffix(actual, " (deleted)")
+	return filepath.Clean(actual) == filepath.Clean(expected)
 }
 
 func monitorTimeouts(ctx context.Context, controller *daemon.Controller) {

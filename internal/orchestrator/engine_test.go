@@ -199,6 +199,34 @@ func TestRecordTokenCapacityPersistsLatestThreadSnapshot(t *testing.T) {
 	}
 }
 
+func TestRecordTokenCapacityRejectsTotalsBeyondKnownWindow(t *testing.T) {
+	t.Parallel()
+
+	engine, _ := startTestRun(t)
+	ctx := context.Background()
+	if _, err := engine.Execute(ctx, RegisterThread{
+		RunID:          "run-1",
+		ThreadID:       "root-1",
+		Role:           RoleRoot,
+		AssignedTask:   "own the migration plan",
+		Model:          "gpt-test",
+		TranscriptPath: "/sessions/root.jsonl",
+	}); err != nil {
+		t.Fatalf("register root: %v", err)
+	}
+	_, err := engine.Execute(ctx, RecordTokenCapacity{
+		RunID:    "run-1",
+		ThreadID: "root-1",
+		Snapshot: TokenCapacitySnapshot{
+			TotalTokens:        200001,
+			ModelContextWindow: 200000,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected impossible token capacity to be rejected")
+	}
+}
+
 func TestWorkerCompactionPersistsHandoffBeforeStoppingAndSteeringParent(t *testing.T) {
 	t.Parallel()
 

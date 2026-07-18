@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -61,20 +62,30 @@ func (f *fakeRuntime) Close() error { return nil }
 
 func (f *fakeRuntime) Endpoint() string { return "unix:///tmp/fake.sock" }
 
-func (f *fakeRuntime) PID() int { return 1234 }
+func (f *fakeRuntime) PID() int { return 99999999 }
 
 type fakeAppServers struct {
-	runtime *fakeRuntime
-	stopped bool
+	runtime    *fakeRuntime
+	active     bool
+	startCalls int
+	stopped    bool
 }
 
 func (f *fakeAppServers) Start(context.Context, orchestrator.Run) (appserver.Runtime, error) {
+	f.active = true
+	f.startCalls++
 	return f.runtime, nil
 }
 
-func (f *fakeAppServers) Get(string) (appserver.Runtime, error) { return f.runtime, nil }
+func (f *fakeAppServers) Get(string) (appserver.Runtime, error) {
+	if !f.active {
+		return nil, errors.New("app-server is not active")
+	}
+	return f.runtime, nil
+}
 
 func (f *fakeAppServers) Stop(string) error {
+	f.active = false
 	f.stopped = true
 	return nil
 }
@@ -206,6 +217,67 @@ func TestControllerKeepsIncompleteRunWhenForegroundExits(t *testing.T) {
 	}
 	if _, err := controller.Repository.Load(ctx, runID); err != nil {
 		t.Fatalf("load incomplete run: %v", err)
+	}
+}
+
+func TestControllerResumeRecoversMissingAppServer(t *testing.T) {
+	controller, servers, runID := newTestController(t)
+	ctx := context.Background()
+	if _, err := controller.Execute(ctx, orchestrator.BlockRun{RunID: runID, Reason: "waiting for user"}); err != nil {
+		t.Fatal(err)
+	}
+	transcript := filepath.Join(t.TempDir(), "root.jsonl")
+	if err := os.WriteFile(transcript, []byte(`{"type":"turn_context","payload":{"turn_id":"turn-root","model":"gpt-recovered"}}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run, err := controller.Repository.Load(ctx, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := run.Threads[run.RootThreadID]
+	root.Model = ""
+	root.TranscriptPath = transcript
+	run.Threads[root.ID] = root
+	run.Revision++
+	if err := controller.Repository.Save(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	servers.active = false
+
+	outcome, err := controller.Execute(ctx, orchestrator.ResumeRun{RunID: runID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if servers.startCalls != 2 {
+		t.Fatalf("app-server starts = %d, want 2", servers.startCalls)
+	}
+	if !outcome.Run.Recovering || outcome.Run.Status != orchestrator.RunTransitioning {
+		t.Fatalf("resume did not enter recovery: %#v", outcome.Run)
+	}
+	if outcome.Run.BlockedReason != "" {
+		t.Fatalf("blocked reason = %q, want empty", outcome.Run.BlockedReason)
+	}
+	if outcome.Run.Threads["root-1"].Model != "gpt-recovered" {
+		t.Fatalf("recovered model = %q, want gpt-recovered", outcome.Run.Threads["root-1"].Model)
+	}
+}
+
+func TestControllerResumeUsesActiveAppServer(t *testing.T) {
+	controller, servers, runID := newTestController(t)
+	ctx := context.Background()
+	if _, err := controller.Execute(ctx, orchestrator.BlockRun{RunID: runID, Reason: "waiting for user"}); err != nil {
+		t.Fatal(err)
+	}
+
+	outcome, err := controller.Execute(ctx, orchestrator.ResumeRun{RunID: runID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if servers.startCalls != 1 {
+		t.Fatalf("app-server starts = %d, want 1", servers.startCalls)
+	}
+	if outcome.Run.Recovering || outcome.Run.Status != orchestrator.RunActive {
+		t.Fatalf("resume unexpectedly entered recovery: %#v", outcome.Run)
 	}
 }
 
