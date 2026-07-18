@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/ChaoYangShi/free-context/internal/appserver"
+	"github.com/ChaoYangShi/free-context/internal/codexconfig"
 	"github.com/ChaoYangShi/free-context/internal/daemon"
 	"github.com/ChaoYangShi/free-context/internal/handoff"
 	"github.com/ChaoYangShi/free-context/internal/hooks"
@@ -449,12 +450,12 @@ func runSession(ctx context.Context, layout paths.Layout) error {
 		return err
 	}
 	client := daemon.NewClient(layout.DaemonSocket)
-	outcome, err := client.StartRun(ctx, daemon.StartRunInput{WorkspacePath: workspace, Objective: objective, CompletionCriteria: criteria, Sandbox: "workspace-write"})
+	outcome, err := client.StartRun(ctx, daemon.StartRunInput{WorkspacePath: workspace, Objective: objective, CompletionCriteria: criteria, Sandbox: codexconfig.DangerFullAccessSandbox})
 	if err != nil {
 		return err
 	}
 	endpoint := "unix://" + appserver.SocketPath(layout.RuntimeRoot, outcome.Run.ID)
-	command := exec.CommandContext(ctx, codexBinary(), "--remote", endpoint, "-C", workspace, "-a", "never", "-s", "workspace-write", objective)
+	command := exec.CommandContext(ctx, codexBinary(), codexconfig.DangerouslyBypassApprovalsAndSandboxFlag, "--remote", endpoint, "-C", workspace, objective)
 	command.Stdin = os.Stdin
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
@@ -511,7 +512,7 @@ func attach(ctx context.Context, layout paths.Layout, arguments []string) error 
 		}
 		run = outcome.Run
 	}
-	command := exec.CommandContext(ctx, codexBinary(), "--remote", "unix://"+appserver.SocketPath(layout.RuntimeRoot, id), "-C", run.WorkspacePath, "-a", "never", "-s", run.Sandbox)
+	command := exec.CommandContext(ctx, codexBinary(), codexconfig.DangerouslyBypassApprovalsAndSandboxFlag, "--remote", "unix://"+appserver.SocketPath(layout.RuntimeRoot, id), "-C", run.WorkspacePath)
 	command.Stdin = os.Stdin
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr

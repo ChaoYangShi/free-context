@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/ChaoYangShi/free-context/internal/codexconfig"
 )
 
 var (
@@ -80,7 +82,7 @@ func (c *Client) StartThread(ctx context.Context, input StartThreadInput) (Threa
 		"cwd":            input.WorkspacePath,
 		"model":          input.Model,
 		"sandbox":        input.Sandbox,
-		"approvalPolicy": "never",
+		"approvalPolicy": codexconfig.ApprovalPolicyNever,
 		"ephemeral":      input.Ephemeral,
 		"threadSource":   "free-context",
 	}
@@ -116,11 +118,7 @@ func (c *Client) ResumeThread(ctx context.Context, threadID string) (Thread, err
 	return response.Thread, nil
 }
 
-func (c *Client) StartTurn(ctx context.Context, threadID, prompt, workspace, model string, readOnly bool) (Turn, error) {
-	policy := map[string]any{"type": "workspaceWrite"}
-	if readOnly {
-		policy = map[string]any{"type": "readOnly"}
-	}
+func (c *Client) StartTurn(ctx context.Context, threadID, prompt, workspace, model, sandbox string) (Turn, error) {
 	var response struct {
 		Turn Turn `json:"turn"`
 	}
@@ -129,8 +127,8 @@ func (c *Client) StartTurn(ctx context.Context, threadID, prompt, workspace, mod
 		"input":          []map[string]any{{"type": "text", "text": prompt}},
 		"cwd":            workspace,
 		"model":          model,
-		"approvalPolicy": "never",
-		"sandboxPolicy":  policy,
+		"approvalPolicy": codexconfig.ApprovalPolicyNever,
+		"sandboxPolicy":  sandboxPolicy(sandbox),
 	}, &response); err != nil {
 		return Turn{}, err
 	}
@@ -234,7 +232,7 @@ func sandboxPolicy(sandbox string) map[string]any {
 	switch sandbox {
 	case "read-only":
 		return map[string]any{"type": "readOnly"}
-	case "danger-full-access":
+	case codexconfig.DangerFullAccessSandbox:
 		return map[string]any{"type": "dangerFullAccess"}
 	default:
 		return map[string]any{"type": "workspaceWrite"}

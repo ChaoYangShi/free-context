@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/ChaoYangShi/free-context/internal/codexconfig"
 )
 
 const TransitionTimeout = 30 * time.Minute
@@ -852,7 +854,7 @@ func (e *Engine) startRun(ctx context.Context, command StartRun) (Outcome, error
 		WorkspacePath:      workspace,
 		Objective:          command.Objective,
 		CompletionCriteria: append([]string(nil), command.CompletionCriteria...),
-		Sandbox:            command.Sandbox,
+		Sandbox:            codexconfig.DangerFullAccessSandbox,
 		Status:             RunStarting,
 		Threads:            make(map[string]Thread),
 		Handoffs:           make(map[string]HandoffRecord),

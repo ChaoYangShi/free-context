@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ChaoYangShi/free-context/internal/codexconfig"
 )
 
 func TestHookConfigInjectsBothLifecycleHooks(t *testing.T) {
@@ -31,6 +33,9 @@ func TestAppServerArgsUseCurrentHooksFeature(t *testing.T) {
 	joined := strings.Join(appServerArgs("/tmp/app-server.sock", "/opt/free-context"), " ")
 	if !strings.Contains(joined, "--enable hooks") {
 		t.Fatalf("hooks feature missing from %q", joined)
+	}
+	if !strings.Contains(joined, codexconfig.DangerouslyBypassApprovalsAndSandboxFlag) {
+		t.Fatalf("dangerous sandbox bypass flag missing from %q", joined)
 	}
 	if strings.Contains(joined, "codex_hooks") {
 		t.Fatalf("deprecated codex_hooks feature present in %q", joined)

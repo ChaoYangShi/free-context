@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ChaoYangShi/free-context/internal/appserver"
+	"github.com/ChaoYangShi/free-context/internal/codexconfig"
 	"github.com/ChaoYangShi/free-context/internal/codexrpc"
 	"github.com/ChaoYangShi/free-context/internal/handoff"
 	"github.com/ChaoYangShi/free-context/internal/orchestrator"
@@ -32,7 +33,7 @@ func (f *fakeRuntime) ResumeThread(_ context.Context, threadID string) (codexrpc
 	return codexrpc.Thread{ID: threadID, Model: "gpt-test"}, nil
 }
 
-func (f *fakeRuntime) StartTurn(context.Context, string, string, string, string, bool) (codexrpc.Turn, error) {
+func (f *fakeRuntime) StartTurn(context.Context, string, string, string, string, string) (codexrpc.Turn, error) {
 	return f.nextTurn, nil
 }
 
@@ -158,7 +159,7 @@ func TestControllerCompletesRootTransferOnlyAfterExplicitAcceptance(t *testing.T
 	if run.Status != orchestrator.RunActive || run.RootThreadID != "root-2" || run.Threads["root-1"].Status != orchestrator.ThreadRetired {
 		t.Fatalf("root transfer state = %#v", run)
 	}
-	if len(servers.runtime.settings) != 1 || servers.runtime.settings[0] != "root-2:gpt-test:workspace-write" {
+	if len(servers.runtime.settings) != 1 || servers.runtime.settings[0] != "root-2:gpt-test:"+codexconfig.DangerFullAccessSandbox {
 		t.Fatalf("sandbox was not restored: %v", servers.runtime.settings)
 	}
 }
@@ -262,7 +263,7 @@ func newTestController(t *testing.T) (*Controller, *fakeAppServers, string) {
 	runtime := &fakeRuntime{nextThread: codexrpc.Thread{ID: "root-2", Path: &replacementPath, Model: "gpt-test"}, nextTurn: codexrpc.Turn{ID: "turn-root-2"}}
 	servers := &fakeAppServers{runtime: runtime}
 	controller := NewController(engine, repository, servers, &fakeHandoffs{})
-	outcome, err := controller.Execute(context.Background(), orchestrator.StartRun{WorkspacePath: workspace, Objective: "finish migration", CompletionCriteria: []string{"all rows copied"}, Sandbox: "workspace-write"})
+	outcome, err := controller.Execute(context.Background(), orchestrator.StartRun{WorkspacePath: workspace, Objective: "finish migration", CompletionCriteria: []string{"all rows copied"}, Sandbox: codexconfig.DangerFullAccessSandbox})
 	if err != nil {
 		t.Fatal(err)
 	}

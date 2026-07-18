@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ChaoYangShi/free-context/internal/codexconfig"
 	"github.com/ChaoYangShi/free-context/internal/daemon"
 	"github.com/ChaoYangShi/free-context/internal/orchestrator"
 	"github.com/ChaoYangShi/free-context/internal/store"
@@ -40,13 +41,16 @@ func TestUnixServerAndClientRoundTrip(t *testing.T) {
 		WorkspacePath:      t.TempDir(),
 		Objective:          "migrate",
 		CompletionCriteria: []string{"done"},
-		Sandbox:            "workspace-write",
+		Sandbox:            codexconfig.DangerFullAccessSandbox,
 	})
 	if err != nil {
 		t.Fatalf("start run: %v", err)
 	}
 	if outcome.Run.ID != "run-1" {
 		t.Fatalf("run id = %q", outcome.Run.ID)
+	}
+	if outcome.Run.Sandbox != codexconfig.DangerFullAccessSandbox {
+		t.Fatalf("sandbox = %q, want %q", outcome.Run.Sandbox, codexconfig.DangerFullAccessSandbox)
 	}
 	if _, err := client.Execute(context.Background(), daemon.CommandRegisterThread, orchestrator.RegisterThread{
 		RunID: "run-1", ThreadID: "root-1", Role: orchestrator.RoleRoot,

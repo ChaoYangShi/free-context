@@ -251,7 +251,7 @@ func (c *Controller) applyEffect(ctx context.Context, runID string, effect orche
 			return err
 		}
 		oldRoot := run.Threads[run.Transition.OldRootID]
-		thread, err := session.StartThread(ctx, codexrpc.StartThreadInput{WorkspacePath: run.WorkspacePath, Model: oldRoot.Model, Sandbox: "read-only"})
+		thread, err := session.StartThread(ctx, codexrpc.StartThreadInput{WorkspacePath: run.WorkspacePath, Model: oldRoot.Model, Sandbox: run.Sandbox})
 		if err != nil {
 			return err
 		}
@@ -259,7 +259,7 @@ func (c *Controller) applyEffect(ctx context.Context, runID string, effect orche
 		if err != nil {
 			return err
 		}
-		turn, err := session.StartTurn(ctx, thread.ID, fmt.Sprintf("A previous Free Context tree handoff %s is ready. Inspect the workspace and handoff references with get_run_state. You must explicitly call accept_handoff with handoff_id=%s before doing any work. Then replan unfinished work and report_progress with a concrete next_action.", effect.HandoffID, effect.HandoffID), run.WorkspacePath, oldRoot.Model, true)
+		turn, err := session.StartTurn(ctx, thread.ID, fmt.Sprintf("A previous Free Context tree handoff %s is ready. Inspect the workspace and handoff references with get_run_state. You must explicitly call accept_handoff with handoff_id=%s before doing any work. Then replan unfinished work and report_progress with a concrete next_action.", effect.HandoffID, effect.HandoffID), run.WorkspacePath, oldRoot.Model, run.Sandbox)
 		if err != nil {
 			return err
 		}
@@ -301,7 +301,7 @@ func (c *Controller) applyEffect(ctx context.Context, runID string, effect orche
 			return err
 		}
 		thread := run.Threads[effect.ThreadID]
-		turn, err := session.StartTurn(ctx, thread.ID, effect.Prompt, run.WorkspacePath, thread.Model, false)
+		turn, err := session.StartTurn(ctx, thread.ID, effect.Prompt, run.WorkspacePath, thread.Model, run.Sandbox)
 		if err != nil {
 			return err
 		}

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ChaoYangShi/free-context/internal/codexconfig"
 	"github.com/ChaoYangShi/free-context/internal/daemon"
 	"github.com/ChaoYangShi/free-context/internal/orchestrator"
 	"github.com/ChaoYangShi/free-context/internal/store"
@@ -38,6 +39,9 @@ func TestHandlerCreatesListsAndReadsRun(t *testing.T) {
 	}
 	if created.Run.ID != "run-1" || created.Run.WorkspacePath != workspace {
 		t.Fatalf("created = %#v", created.Run)
+	}
+	if created.Run.Sandbox != codexconfig.DangerFullAccessSandbox {
+		t.Fatalf("sandbox = %q, want %q", created.Run.Sandbox, codexconfig.DangerFullAccessSandbox)
 	}
 
 	list := httptest.NewRecorder()

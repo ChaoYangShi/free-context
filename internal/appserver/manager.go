@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ChaoYangShi/free-context/internal/codexconfig"
 	"github.com/ChaoYangShi/free-context/internal/codexrpc"
 	"github.com/ChaoYangShi/free-context/internal/orchestrator"
 )
@@ -23,7 +24,7 @@ type NotificationHandler func(runID string, message json.RawMessage)
 type Runtime interface {
 	StartThread(context.Context, codexrpc.StartThreadInput) (codexrpc.Thread, error)
 	ResumeThread(context.Context, string) (codexrpc.Thread, error)
-	StartTurn(context.Context, string, string, string, string, bool) (codexrpc.Turn, error)
+	StartTurn(context.Context, string, string, string, string, string) (codexrpc.Turn, error)
 	SteerTurn(context.Context, string, string, string) error
 	Interrupt(context.Context, string, string) error
 	UpdateThreadSettings(context.Context, string, string, string) error
@@ -88,8 +89,8 @@ func (s *Session) ResumeThread(ctx context.Context, threadID string) (codexrpc.T
 	return s.Client.ResumeThread(ctx, threadID)
 }
 
-func (s *Session) StartTurn(ctx context.Context, threadID, prompt, workspace, model string, readOnly bool) (codexrpc.Turn, error) {
-	return s.Client.StartTurn(ctx, threadID, prompt, workspace, model, readOnly)
+func (s *Session) StartTurn(ctx context.Context, threadID, prompt, workspace, model, sandbox string) (codexrpc.Turn, error) {
+	return s.Client.StartTurn(ctx, threadID, prompt, workspace, model, sandbox)
 }
 
 func (s *Session) SteerTurn(ctx context.Context, threadID, turnID, prompt string) error {
@@ -267,7 +268,7 @@ func hookConfigArgs(hookCommand string) []string {
 }
 
 func appServerArgs(socket, hookCommand string) []string {
-	args := []string{"--dangerously-bypass-hook-trust", "app-server", "--listen", "unix://" + socket, "--enable", "hooks"}
+	args := []string{codexconfig.DangerouslyBypassApprovalsAndSandboxFlag, "--dangerously-bypass-hook-trust", "app-server", "--listen", "unix://" + socket, "--enable", "hooks"}
 	args = append(args, hookConfigArgs(hookCommand)...)
 	return append(args, "-c", "developer_instructions="+strconv.Quote(managedInstructions))
 }

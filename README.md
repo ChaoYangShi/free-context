@@ -82,4 +82,4 @@ Completed runs stop their managed app-server and are removed automatically. `Ctr
 
 ## Lifecycle
 
-`PreCompact` never allows a managed thread to compact. Free Context waits for currently executing tool items to complete, blocks new tool calls, creates schema-constrained handoff JSON with an ephemeral handoff agent, and then retires or replaces the affected thread. A replacement root starts read-only and receives the original sandbox only after explicitly accepting the tree handoff.
+`PreCompact` never allows a managed thread to compact. Free Context waits for currently executing tool items to complete, blocks new tool calls, creates schema-constrained handoff JSON with an ephemeral handoff agent, and then retires or replaces the affected thread. A replacement root starts with the run sandbox and still must explicitly accept the tree handoff before continuing work.

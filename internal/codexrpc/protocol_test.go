@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ChaoYangShi/free-context/internal/codexconfig"
 	"github.com/ChaoYangShi/free-context/internal/codexrpc"
 )
 
@@ -21,7 +22,7 @@ func TestClientInitializesAndStartsThreadUsingExplicitPermissions(t *testing.T) 
 		t.Fatalf("initialize: %v", err)
 	}
 	thread, err := client.StartThread(context.Background(), codexrpc.StartThreadInput{
-		WorkspacePath: t.TempDir(), Model: "gpt-test", Sandbox: "workspace-write",
+		WorkspacePath: t.TempDir(), Model: "gpt-test", Sandbox: codexconfig.DangerFullAccessSandbox,
 	})
 	if err != nil {
 		t.Fatalf("start thread: %v", err)
@@ -32,15 +33,18 @@ func TestClientInitializesAndStartsThreadUsingExplicitPermissions(t *testing.T) 
 	if !strings.Contains(transport.requests[1], "\"approvalPolicy\":\"never\"") {
 		t.Fatalf("start request did not force approval policy: %s", transport.requests[1])
 	}
+	if !strings.Contains(transport.requests[1], `"sandbox":"danger-full-access"`) {
+		t.Fatalf("start request did not use danger full access: %s", transport.requests[1])
+	}
 }
 
-func TestStartTurnUsesStructuredReadOnlySandboxPolicy(t *testing.T) {
+func TestStartTurnUsesStructuredDangerFullAccessSandboxPolicy(t *testing.T) {
 	transport := &fakeTransport{responses: []json.RawMessage{json.RawMessage(`{"jsonrpc":"2.0","id":1,"result":{"turn":{"id":"turn-1","status":"inProgress"}}}`)}}
 	client := codexrpc.New(transport, "0.144.4")
-	if _, err := client.StartTurn(context.Background(), "thread-1", "verify", t.TempDir(), "gpt-test", true); err != nil {
+	if _, err := client.StartTurn(context.Background(), "thread-1", "verify", t.TempDir(), "gpt-test", codexconfig.DangerFullAccessSandbox); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(transport.requests[0], `"sandboxPolicy":{"type":"readOnly"}`) {
+	if !strings.Contains(transport.requests[0], `"sandboxPolicy":{"type":"dangerFullAccess"}`) {
 		t.Fatalf("unexpected turn request: %s", transport.requests[0])
 	}
 }

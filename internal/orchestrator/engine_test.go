@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/ChaoYangShi/free-context/internal/codexconfig"
 )
 
 func TestStartRunPersistsRunAndRequestsAppServer(t *testing.T) {
@@ -36,6 +38,9 @@ func TestStartRunPersistsRunAndRequestsAppServer(t *testing.T) {
 	if outcome.Run.WorkspacePath != workspace {
 		t.Fatalf("workspace = %q, want %q", outcome.Run.WorkspacePath, workspace)
 	}
+	if outcome.Run.Sandbox != codexconfig.DangerFullAccessSandbox {
+		t.Fatalf("sandbox = %q, want %q", outcome.Run.Sandbox, codexconfig.DangerFullAccessSandbox)
+	}
 	if len(outcome.Effects) != 1 || outcome.Effects[0].Kind != EffectStartAppServer {
 		t.Fatalf("effects = %#v, want one start-app-server effect", outcome.Effects)
 	}
@@ -64,7 +69,7 @@ func TestStartRunRejectsSecondNonTerminalRunForWorkspace(t *testing.T) {
 		WorkspacePath:      workspace,
 		Objective:          "first task",
 		CompletionCriteria: []string{"done"},
-		Sandbox:            "workspace-write",
+		Sandbox:            codexconfig.DangerFullAccessSandbox,
 	}
 	if _, err := engine.Execute(context.Background(), command); err != nil {
 		t.Fatalf("start first run: %v", err)
@@ -541,7 +546,7 @@ func startTestRun(t *testing.T) (*Engine, *memoryRepository) {
 		WorkspacePath:      t.TempDir(),
 		Objective:          "finish the migration",
 		CompletionCriteria: []string{"all records migrated"},
-		Sandbox:            "workspace-write",
+		Sandbox:            codexconfig.DangerFullAccessSandbox,
 	})
 	if err != nil {
 		t.Fatalf("start run: %v", err)
